@@ -1,6 +1,8 @@
 # app.py
 import streamlit as st
 import os
+import uuid
+import extra_streamlit_components as exc
 
 from chatbot.config import APP_NAME, AVAILABLE_MODES
 from chatbot.memory import initialize_memory, get_history, add_message, clear_history
@@ -16,10 +18,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize memory in session state
-initialize_memory()
+# 2. Cookie Management for Persistent Anonymous User IDs
+# We use extra-streamlit-components to read/write browser cookies.
+cookie_manager = exc.get_cookie_manager()
 
-# 2. Modern UI Aesthetics (CSS injection)
+# Initialize session_state cache for user_id to prevent double generation during load latency
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+
+# Read cookie
+user_id_cookie = cookie_manager.get("lyra_user_id")
+
+if user_id_cookie:
+    st.session_state.user_id = user_id_cookie
+elif st.session_state.user_id is None:
+    # Generate and set a new UUID if no cookie exists in browser
+    generated_id = str(uuid.uuid4())
+    st.session_state.user_id = generated_id
+    cookie_manager.set(
+        cookie="lyra_user_id", 
+        val=generated_id, 
+        max_age=31536000,  # Persist for 1 year (in seconds)
+        key="uuid_cookie_setter"
+    )
+
+# Active user UUID
+user_id = st.session_state.user_id
+
+# Initialize memory from database if empty
+initialize_memory(user_id)
+
+# 3. Modern UI Aesthetics (CSS injection)
 st.markdown("""
 <style>
     /* Import modern Outfit font */
@@ -86,7 +115,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 3. Mode Metadata for Sidebar descriptions
+# 4. Mode Metadata for Sidebar descriptions
 MODE_INFO = {
     "General Assistant": {
         "description": "Brainstorm, check code, or ask general questions. Lyra is in her standard creative mode.",
@@ -114,7 +143,7 @@ MODE_INFO = {
     }
 }
 
-# 4. Sidebar Construction
+# 5. Sidebar Construction
 with st.sidebar:
     st.markdown(f"<h2 style='color:#FFFFFF; font-weight:800; margin-bottom:0;'>✨ {APP_NAME}</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color:#64748B; font-size:0.9rem; margin-top:0;'>Your AI Learning Assistant</p>", unsafe_allow_html=True)
@@ -154,8 +183,8 @@ with st.sidebar:
                         critique = evaluate_resume(resume_text)
                         
                         # Add critique sequence to memory
-                        add_message("user", f"Uploaded resume '{uploaded_file.name}' for critique.", "Resume Reviewer")
-                        add_message("assistant", critique, "Resume Reviewer")
+                        add_message("user", f"Uploaded resume '{uploaded_file.name}' for critique.", "Resume Reviewer", user_id)
+                        add_message("assistant", critique, "Resume Reviewer", user_id)
                         
                         st.success("Analysis complete! Review the results in the chat below.")
                         st.rerun()
@@ -166,16 +195,16 @@ with st.sidebar:
     
     # Clear conversation history button
     if st.button("🗑️ Clear Conversation", use_container_width=True, type="secondary"):
-        clear_history()
+        clear_history(user_id)
         st.success("Chat history cleared!")
         st.rerun()
 
-# 5. Main Content Header
+# 6. Main Content Header
 st.markdown("<h1 class='title-gradient'>Lyra</h1>", unsafe_allow_html=True)
 st.markdown(f"<p class='subtitle-text'>Friendly, intelligent, and witty AI companion.</p>", unsafe_allow_html=True)
 
-# Retrieve conversation history
-history = get_history()
+# Retrieve conversation history (loads from Supabase if empty)
+history = get_history(user_id)
 
 # Show welcome greeting if there are no messages
 if not history:
@@ -197,7 +226,7 @@ if not history:
     </div>
     """, unsafe_allow_html=True)
 
-# 6. Render Chat Messages from history
+# 7. Render Chat Messages from history
 for msg in history:
     role = msg["role"]
     content = msg["content"]
@@ -212,12 +241,12 @@ for msg in history:
         st.markdown(f'<span class="mode-badge {badge_class}">{msg_mode}</span>', unsafe_allow_html=True)
         st.markdown(content)
 
-# 7. Accept User Chat Input
+# 8. Accept User Chat Input
 user_input = st.chat_input("Say something to Lyra...")
 
 if user_input:
-    # Append user message to memory & display
-    add_message("user", user_input, selected_mode)
+    # Append user message to memory (session state + Supabase) & display
+    add_message("user", user_input, selected_mode, user_id)
     
     # Rerun page to display new user message immediately before LLM call
     st.rerun()
@@ -242,8 +271,8 @@ if history and history[-1]["role"] == "user":
             # Print response
             st.markdown(cleaned)
             
-            # Save assistant response to memory
-            add_message("assistant", cleaned, last_mode)
+            # Save assistant response to memory (session state + Supabase)
+            add_message("assistant", cleaned, last_mode, user_id)
             
             # Force rerun to finalise session state rendering
             st.rerun()
