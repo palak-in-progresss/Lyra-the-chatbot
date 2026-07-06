@@ -20,7 +20,7 @@ st.set_page_config(
 
 # 2. Cookie Management for Persistent Anonymous User IDs
 # We use extra-streamlit-components to read/write browser cookies.
-cookie_manager = exc.get_cookie_manager()
+cookie_manager = exc.CookieManager()
 
 # Initialize session_state cache for user_id to prevent double generation during load latency
 if "user_id" not in st.session_state:
