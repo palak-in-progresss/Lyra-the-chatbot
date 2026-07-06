@@ -3,7 +3,7 @@ import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# Load environmental variables
+# Load environment variables
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -21,27 +21,78 @@ def get_or_create_user(user_uuid: str):
     If they do not exist, inserts their anonymous UUID record.
     """
     try:
-        # Check if user already exists
         response = supabase.table("users").select("id").eq("id", user_uuid).execute()
         if not response.data:
-            # Register user
             supabase.table("users").insert({"id": user_uuid}).execute()
         return True
     except Exception as e:
         print(f"Database error in get_or_create_user: {e}")
         return False
 
-def save_message(user_uuid: str, role: str, message: str, mode: str):
+def create_session(user_uuid: str, title: str = "New Chat") -> str:
     """
-    Saves a single message turn (user or assistant) into the Supabase database.
+    Creates a new conversation session associated with the user.
+    Returns the generated session_id UUID.
     """
     try:
-        # First ensure user entry exists
         get_or_create_user(user_uuid)
-        
-        # Save message
+        response = supabase.table("sessions").insert({
+            "user_id": user_uuid,
+            "title": title
+        }).execute()
+        if response.data:
+            return response.data[0]["id"]
+    except Exception as e:
+        print(f"Database error in create_session: {e}")
+    return ""
+
+def get_user_sessions(user_uuid: str):
+    """
+    Retrieves all chat sessions for the user, ordered by creation date (newest first).
+    """
+    try:
+        get_or_create_user(user_uuid)
+        response = (
+            supabase.table("sessions")
+            .select("id, title, created_at")
+            .eq("user_id", user_uuid)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return response.data
+    except Exception as e:
+        print(f"Database error in get_user_sessions: {e}")
+        return []
+
+def update_session_title(session_uuid: str, title: str):
+    """
+    Updates the title of a specific chat session.
+    """
+    try:
+        supabase.table("sessions").update({"title": title}).eq("id", session_uuid).execute()
+    except Exception as e:
+        print(f"Database error in update_session_title: {e}")
+
+def delete_session(session_uuid: str):
+    """
+    Deletes a specific chat session (automatically cascade-deletes its messages).
+    """
+    try:
+        supabase.table("sessions").delete().eq("id", session_uuid).execute()
+        return True
+    except Exception as e:
+        print(f"Database error in delete_session: {e}")
+        return False
+
+def save_message(user_uuid: str, session_uuid: str, role: str, message: str, mode: str):
+    """
+    Saves a message associated with both the user and the specific active session.
+    """
+    try:
+        get_or_create_user(user_uuid)
         supabase.table("conversations").insert({
             "user_id": user_uuid,
+            "session_id": session_uuid,
             "role": role,
             "message": message,
             "mode": mode
@@ -49,25 +100,21 @@ def save_message(user_uuid: str, role: str, message: str, mode: str):
     except Exception as e:
         print(f"Database error in save_message: {e}")
 
-def load_messages(user_uuid: str, limit: int = 20):
+def load_messages(session_uuid: str, limit: int = 20):
     """
-    Loads the recent history for the given user, ordered oldest to newest.
+    Loads recent history for a specific chat session, ordered oldest to newest.
     """
     try:
-        # Fetch latest messages descending, then reverse to output in chronological order
         response = (
             supabase.table("conversations")
             .select("role, message, mode")
-            .eq("user_id", user_uuid)
+            .eq("session_id", session_uuid)
             .order("created_at", desc=True)
             .limit(limit)
             .execute()
         )
         
-        # Reverse list to maintain oldest -> newest conversation flow
         messages = response.data[::-1]
-        
-        # Format to match Streamlit's session_state expectation
         formatted_messages = []
         for msg in messages:
             formatted_messages.append({
@@ -79,14 +126,3 @@ def load_messages(user_uuid: str, limit: int = 20):
     except Exception as e:
         print(f"Database error in load_messages: {e}")
         return []
-
-def delete_messages(user_uuid: str):
-    """
-    Deletes all conversation records associated with the user UUID.
-    """
-    try:
-        supabase.table("conversations").delete().eq("user_id", user_uuid).execute()
-        return True
-    except Exception as e:
-        print(f"Database error in delete_messages: {e}")
-        return False
