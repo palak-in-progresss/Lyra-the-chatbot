@@ -19,34 +19,44 @@ st.set_page_config(
 )
 
 # 2. Cookie Management for Persistent Anonymous User IDs
-# We use extra-streamlit-components to read/write browser cookies.
+import time
+
+# Initialize Cookie Manager
 cookie_manager = exc.CookieManager()
 
-# Initialize session_state cache for user_id to prevent double generation during load latency
+# Keep track of check attempts to prevent an infinite rerun loop
+if "cookie_check_attempts" not in st.session_state:
+    st.session_state.cookie_check_attempts = 0
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 
-# Read cookie
-user_id_cookie = cookie_manager.get("lyra_user_id")
+# Attempt to read all cookies
+cookies = cookie_manager.get_all()
+
+# If cookie manager is still loading (cookies is empty), wait briefly and retry (max 3 times)
+if not cookies and st.session_state.cookie_check_attempts < 3:
+    st.session_state.cookie_check_attempts += 1
+    time.sleep(0.15)
+    st.rerun()
+
+# Read our specific cookie
+user_id_cookie = cookies.get("lyra_user_id")
 
 if user_id_cookie:
     st.session_state.user_id = user_id_cookie
 elif st.session_state.user_id is None:
-    # Generate and set a new UUID if no cookie exists in browser
+    # If we waited and still no cookie was found, create a new one (first-time visitor)
     generated_id = str(uuid.uuid4())
     st.session_state.user_id = generated_id
     cookie_manager.set(
         cookie="lyra_user_id", 
         val=generated_id, 
-        max_age=31536000,  # Persist for 1 year (in seconds)
+        max_age=31536000,  # 1 year
         key="uuid_cookie_setter"
     )
 
-# Active user UUID
+# Active user UUID used for database history mapping
 user_id = st.session_state.user_id
-
-# Initialize memory from database if empty
-initialize_memory(user_id)
 
 # 3. Modern UI Aesthetics (CSS injection)
 st.markdown("""
