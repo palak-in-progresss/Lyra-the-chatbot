@@ -31,9 +31,25 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+def set_persistent_cookie(name, value):
+    """
+    Sets a persistent cookie directly in the browser using document.cookie.
+    This bypasses the session-cookie bug in extra-streamlit-components
+    and keeps the cookie valid for 1 year (365 days).
+    """
+    import streamlit.components.v1 as components
+    js_code = f"""
+    <script>
+    const d = new Date();
+    d.setTime(d.getTime() + (365*24*60*60*1000));
+    let expires = "expires="+ d.toUTCString();
+    document.cookie = "{name}=" + "{value}" + ";" + expires + ";path=/;SameSite=Strict;Secure";
+    </script>
+    """
+    components.html(js_code, height=0)
+
 # 2. User ID Persistence (URL parameters for sharing, cookies for tab close/open persistence)
 query_params = st.query_params
-cookie_manager = exc.CookieManager()
 
 # Initialize user_id cache in session state if not present
 if "user_id" not in st.session_state:
@@ -47,12 +63,7 @@ if "uid" in query_params:
     st.session_state.user_id = user_id
     # Sync cookie to browser if it doesn't match the URL uid
     if user_id_cookie != user_id:
-        cookie_manager.set(
-            cookie="lyra_user_id",
-            val=user_id,
-            max_age=31536000,
-            key="cookie_syncer"
-        )
+        set_persistent_cookie("lyra_user_id", user_id)
 else:
     # URL has no ID. Check if we already have it saved in browser cookies
     if user_id_cookie:
@@ -69,12 +80,7 @@ else:
         st.session_state.user_id = generated_id
         st.query_params["uid"] = generated_id
         user_id = generated_id
-        cookie_manager.set(
-            cookie="lyra_user_id", 
-            val=generated_id, 
-            max_age=31536000,  # 1 year
-            key="uuid_cookie_setter"
-        )
+        set_persistent_cookie("lyra_user_id", generated_id)
 
 # If user ID is still loading, stop execution (failsafe)
 if user_id is None:
