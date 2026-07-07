@@ -2,6 +2,7 @@
 import streamlit as st
 import os
 import uuid
+import extra_streamlit_components as exc
 import time
 
 from chatbot.config import APP_NAME, AVAILABLE_MODES
@@ -30,20 +31,35 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Authentication UI (Supabase Auth - Bypasses all browser cookie/iframe restrictions)
-# 2. Authentication UI & URL Session Persistence (Bypasses cookie blocks)
-query_params = st.query_params
-
-# Auto-login if user ID and email exist in the URL query parameters
-if "uid" in query_params and "email" in query_params:
-    st.session_state.user_id = query_params["uid"]
-    st.session_state.user_email = query_params["email"]
+# 2. Authentication UI & Persistent Login (Bypasses session reset on tab close)
+cookie_manager = exc.CookieManager()
 
 # Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
+
+# Priority 1: Try to load saved session from URL query parameters (never blocked in iframe)
+query_params = st.query_params
+if "uid" in query_params and "email" in query_params:
+    st.session_state.user_id = query_params["uid"]
+    st.session_state.user_email = query_params["email"]
+
+# Priority 2 (Backup): Try to load saved login session from browser cookies (for direct tabs)
+if st.session_state.user_id is None:
+    saved_session = st.context.cookies.get("lyra_auth_session")
+    if saved_session:
+        try:
+            if "|" in saved_session:
+                saved_user_id, saved_user_email = saved_session.split("|", 1)
+                st.session_state.user_id = saved_user_id
+                st.session_state.user_email = saved_user_email
+                # Write to query params so subsequent navigation is instant
+                st.query_params["uid"] = saved_user_id
+                st.query_params["email"] = saved_user_email
+        except Exception as e:
+            print(f"Error parsing auth session cookie: {e}")
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
@@ -72,9 +88,24 @@ if st.session_state.user_id is None:
                     # Set session state
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
+                    
                     # Sync to URL for tab-close persistence
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
+                    
+                    # Save to persistent cookie (fallback for direct tabs)
+                    import datetime
+                    cookie_expiry = datetime.datetime.now() + datetime.timedelta(days=30)
+                    session_val = f"{response.user.id}|{response.user.email}"
+                    cookie_manager.set(
+                        cookie="lyra_auth_session",
+                        val=session_val,
+                        expires_at=cookie_expiry,
+                        same_site="none",
+                        secure=True,
+                        key="save_user_session"
+                    )
+                    
                     st.success("Welcome back!")
                     st.rerun()
                 except Exception as e:
@@ -101,9 +132,24 @@ if st.session_state.user_id is None:
                     # Set session state
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
+                    
                     # Sync to URL for tab-close persistence
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
+                    
+                    # Save to persistent cookie (fallback for direct tabs)
+                    import datetime
+                    cookie_expiry = datetime.datetime.now() + datetime.timedelta(days=30)
+                    session_val = f"{response.user.id}|{response.user.email}"
+                    cookie_manager.set(
+                        cookie="lyra_auth_session",
+                        val=session_val,
+                        expires_at=cookie_expiry,
+                        same_site="none",
+                        secure=True,
+                        key="save_user_session_signup"
+                    )
+                    
                     # Initialize in public.users table
                     get_or_create_user(response.user.id)
                     st.success("Account created successfully!")
@@ -332,6 +378,8 @@ with st.sidebar:
             supabase.auth.sign_out()
         except:
             pass
+        # Clear cookies & query parameters
+        cookie_manager.delete("lyra_auth_session", key="del_cookie_session")
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.active_session_id = None
