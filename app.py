@@ -66,9 +66,9 @@ if st.session_state.user_id is None:
             """
             <script>
             try {
-                parent.document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure";
+                parent.document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
             } catch(e) {
-                document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure";
+                document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
             }
             </script>
             """,
@@ -156,9 +156,9 @@ if user_id is not None and not st.context.cookies.get("lyra_auth_session"):
         f"""
         <script>
         try {{
-            parent.document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=None; Secure";
+            parent.document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=Lax; Secure";
         }} catch(e) {{
-            document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=None; Secure";
+            document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=Lax; Secure";
         }}
         </script>
         """,
@@ -386,7 +386,11 @@ with st.sidebar:
         st.components.v1.html(
             """
             <script>
-            document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure";
+            try {
+                parent.document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
+            } catch(e) {
+                document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
+            }
             </script>
             """,
             height=0,
