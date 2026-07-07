@@ -31,44 +31,76 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Cookie Management for Persistent Anonymous User IDs (SameSite=None for iframe compatibility)
-cookie_manager = exc.CookieManager()
-
-# Initialize session state cache
+# 2. Authentication UI (Supabase Auth - Bypasses all browser cookie restrictions)
+# Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
-if "active_session_id" not in st.session_state:
-    st.session_state.active_session_id = None
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
 
-# Read cookie synchronously from request headers (instant, zero delay)
-user_id_cookie = st.context.cookies.get("lyra_user_id")
+# If user is not logged in, render the Auth Page
+if st.session_state.user_id is None:
+    st.markdown("<h1 class='title-gradient' style='text-align:center;'>Welcome to Lyra</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center; color:#94A3B8; margin-bottom:30px;'>Your AI Study and Coding Companion</p>", unsafe_allow_html=True)
+    
+    # Beautiful auth container tab switcher
+    auth_tab = st.tabs(["🔒 Log In", "📝 Sign Up"])
+    
+    # LOGIN TAB
+    with auth_tab[0]:
+        st.markdown("<h3 style='color:#FFFFFF; margin-top:10px;'>Access Your Account</h3>", unsafe_allow_html=True)
+        login_email = st.text_input("Email Address", key="login_email_input")
+        login_password = st.text_input("Password", type="password", key="login_password_input")
+        
+        if st.button("🚀 Log In", use_container_width=True, key="login_submit_btn"):
+            if not login_email or not login_password:
+                st.error("Please enter both email and password.")
+            else:
+                try:
+                    from chatbot.database import supabase
+                    response = supabase.auth.sign_in_with_password({
+                        "email": login_email,
+                        "password": login_password
+                    })
+                    st.session_state.user_id = response.user.id
+                    st.session_state.user_email = response.user.email
+                    st.success("Welcome back!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Login failed: {e}")
+                    
+    # SIGNUP TAB
+    with auth_tab[1]:
+        st.markdown("<h3 style='color:#FFFFFF; margin-top:10px;'>Create a New Account</h3>", unsafe_allow_html=True)
+        signup_email = st.text_input("Email Address", key="signup_email_input")
+        signup_password = st.text_input("Password (min 6 characters)", type="password", key="signup_password_input")
+        
+        if st.button("✨ Sign Up", use_container_width=True, key="signup_submit_btn"):
+            if not signup_email or not signup_password:
+                st.error("Please enter both email and password.")
+            elif len(signup_password) < 6:
+                st.error("Password must be at least 6 characters.")
+            else:
+                try:
+                    from chatbot.database import supabase, get_or_create_user
+                    response = supabase.auth.sign_up({
+                        "email": signup_email,
+                        "password": signup_password
+                    })
+                    # Set user details
+                    st.session_state.user_id = response.user.id
+                    st.session_state.user_email = response.user.email
+                    # Initialize in public.users table
+                    get_or_create_user(response.user.id)
+                    st.success("Account created successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Signup failed: {e}")
+                    
+    st.stop()  # Stop rendering the rest of the page if not logged in
 
-if user_id_cookie:
-    # Cookie exists! Load it instantly
-    st.session_state.user_id = user_id_cookie
-else:
-    # Cookie doesn't exist (first-time visitor), generate a new one
-    if st.session_state.user_id is None:
-        generated_id = str(uuid.uuid4())
-        st.session_state.user_id = generated_id
-        import datetime
-        far_future = datetime.datetime.now() + datetime.timedelta(days=365)
-        cookie_manager.set(
-            cookie="lyra_user_id", 
-            val=generated_id, 
-            expires_at=far_future,
-            same_site="none",  # Allow cross-site iframe cookies
-            secure=True,       # Must be secure to use same_site="none"
-            key="uuid_cookie_setter"
-        )
-
-# Active user UUID
+# Set user_id from session state
 user_id = st.session_state.user_id
-
-# Failsafe: if still loading, show info message
-if user_id is None:
-    st.info("🌌 Loading your Lyra profile...")
-    st.stop()
 
 # 3. Session (Conversation Thread) Management
 # Initialize active session ID cache if not present
@@ -276,6 +308,22 @@ with st.sidebar:
                         st.rerun()
                     else:
                         st.error("Failed to read the PDF. Make sure it contains extractable text.")
+
+    # Logout section in sidebar
+    st.divider()
+    st.markdown(f"<p style='color:#64748B; font-size:0.85rem; margin-bottom:5px;'>👤 Logged in as:<br><b style='color:#E2E8F0;'>{st.session_state.user_email}</b></p>", unsafe_allow_html=True)
+    if st.button("🚪 Log Out", use_container_width=True):
+        from chatbot.database import supabase
+        try:
+            supabase.auth.sign_out()
+        except:
+            pass
+        st.session_state.user_id = None
+        st.session_state.user_email = None
+        st.session_state.active_session_id = None
+        st.session_state.messages = []
+        st.query_params.clear()
+        st.rerun()
 
 # 6. Main Content Header
 st.markdown("<h1 class='title-gradient'>Lyra</h1>", unsafe_allow_html=True)
