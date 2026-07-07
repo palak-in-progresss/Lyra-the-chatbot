@@ -31,46 +31,43 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-def inject_js_redirector():
-    """
-    Injects a client-side HTML5 localStorage checker.
-    If no 'uid' is present in the URL query parameters, it reads it from 
-    localStorage (or generates a new one) and redirects the iframe to include it.
-    This bypasses all browser third-party cookie blocks.
-    """
-    import streamlit.components.v1 as components
-    js_code = """
-    <script>
-    const urlParams = new URLSearchParams(window.location.search);
-    let uid = urlParams.get('uid');
-    let savedUid = localStorage.getItem('lyra_uid');
+# 2. Cookie Management for Persistent Anonymous User IDs (SameSite=None for iframe compatibility)
+cookie_manager = exc.CookieManager()
 
-    if (!uid) {
-        if (savedUid) {
-            window.location.replace(window.location.pathname + '?uid=' + savedUid);
-        } else {
-            let newUid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-            localStorage.setItem('lyra_uid', newUid);
-            window.location.replace(window.location.pathname + '?uid=' + newUid);
-        }
-    } else {
-        if (savedUid !== uid) {
-            localStorage.setItem('lyra_uid', uid);
-        }
-    }
-    </script>
-    """
-    components.html(js_code, height=0)
+# Initialize session state cache
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+if "active_session_id" not in st.session_state:
+    st.session_state.active_session_id = None
 
-# 2. User ID Persistence (HTML5 localStorage based tracking, immune to cookie blocks)
-query_params = st.query_params
-user_id = query_params.get("uid")
+# Read cookie synchronously from request headers (instant, zero delay)
+user_id_cookie = st.context.cookies.get("lyra_user_id")
 
-if not user_id:
-    inject_js_redirector()
+if user_id_cookie:
+    # Cookie exists! Load it instantly
+    st.session_state.user_id = user_id_cookie
+else:
+    # Cookie doesn't exist (first-time visitor), generate a new one
+    if st.session_state.user_id is None:
+        generated_id = str(uuid.uuid4())
+        st.session_state.user_id = generated_id
+        import datetime
+        far_future = datetime.datetime.now() + datetime.timedelta(days=365)
+        cookie_manager.set(
+            cookie="lyra_user_id", 
+            val=generated_id, 
+            expires_at=far_future,
+            same_site="none",  # Allow cross-site iframe cookies
+            secure=True,       # Must be secure to use same_site="none"
+            key="uuid_cookie_setter"
+        )
+
+# Active user UUID
+user_id = st.session_state.user_id
+
+# Failsafe: if still loading, show info message
+if user_id is None:
+    st.info("🌌 Loading your Lyra profile...")
     st.stop()
 
 # 3. Session (Conversation Thread) Management
