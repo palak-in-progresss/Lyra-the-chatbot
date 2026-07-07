@@ -60,6 +60,22 @@ if st.session_state.user_id is None:
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
+    # Clear cookies if any still exist in request headers (declarative sync)
+    if st.context.cookies.get("lyra_auth_session"):
+        st.components.v1.html(
+            """
+            <script>
+            try {
+                parent.document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure";
+            } catch(e) {
+                document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure";
+            }
+            </script>
+            """,
+            height=0,
+            width=0
+        )
+
     st.markdown("<h1 class='title-gradient' style='text-align:center;'>Welcome to Lyra</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align:center; color:#94A3B8; margin-bottom:30px;'>Your AI Study and Coding Companion</p>", unsafe_allow_html=True)
     
@@ -89,18 +105,6 @@ if st.session_state.user_id is None:
                     # Sync to URL for tab-close persistence
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
-                    
-                    # Save to persistent cookie using standard JavaScript injection
-                    session_val = f"{response.user.id}|{response.user.email}"
-                    st.components.v1.html(
-                        f"""
-                        <script>
-                        document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=None; Secure";
-                        </script>
-                        """,
-                        height=0,
-                        width=0
-                    )
                     
                     st.success("Welcome back!")
                     st.rerun()
@@ -133,18 +137,6 @@ if st.session_state.user_id is None:
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
                     
-                    # Save to persistent cookie using standard JavaScript injection
-                    session_val = f"{response.user.id}|{response.user.email}"
-                    st.components.v1.html(
-                        f"""
-                        <script>
-                        document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=None; Secure";
-                        </script>
-                        """,
-                        height=0,
-                        width=0
-                    )
-                    
                     # Initialize in public.users table
                     get_or_create_user(response.user.id)
                     st.success("Account created successfully!")
@@ -156,6 +148,23 @@ if st.session_state.user_id is None:
 
 # Set user_id from session state
 user_id = st.session_state.user_id
+
+# Declarative cookie sync: if logged in but browser request cookie is missing, write it (using parent origin if possible)
+if user_id is not None and not st.context.cookies.get("lyra_auth_session"):
+    session_val = f"{st.session_state.user_id}|{st.session_state.user_email}"
+    st.components.v1.html(
+        f"""
+        <script>
+        try {{
+            parent.document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=None; Secure";
+        }} catch(e) {{
+            document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=None; Secure";
+        }}
+        </script>
+        """,
+        height=0,
+        width=0
+    )
 
 # 3. Session (Conversation Thread) Management
 # Initialize active session ID cache if not present
