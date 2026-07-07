@@ -44,40 +44,27 @@ if "uid" in query_params and "email" in query_params:
     st.session_state.user_email = query_params["email"]
 
 # Priority 2: Use browser LocalStorage to persist session across tab closes (cookie-free)
-from streamlit_javascript import st_javascript
-
-js_get_code = """
-(function() {
-    try {
-        var s = window.parent.localStorage.getItem("lyra_auth_session");
-        if (s) return s;
-    } catch(e) {}
-    try {
-        var s2 = localStorage.getItem("lyra_auth_session");
-        if (s2) return s2;
-    } catch(e) {}
-    return "NO_SESSION";
-})()
-"""
-
-# If URL is clean, fetch from browser local storage
+# We inject a native DOM script. If a session is found in localStorage and we don't have uid in query params,
+# we redirect the parent/iframe window directly to append the query params.
 if st.session_state.user_id is None:
-    js_val = st_javascript(js_get_code, key="get_local_storage_session")
-    if js_val == 0:
-        # Component is still loading in browser, show loader and stop
-        st.info("🌌 Loading your Lyra profile...")
-        st.stop()
-    elif js_val and js_val != "NO_SESSION":
-        try:
-            if "|" in js_val:
-                saved_user_id, saved_user_email = js_val.split("|", 1)
-                st.session_state.user_id = saved_user_id
-                st.session_state.user_email = saved_user_email
-                # Write to query params so subsequent navigation is instant
-                st.query_params["uid"] = saved_user_id
-                st.query_params["email"] = saved_user_email
-        except Exception as e:
-            print(f"Error parsing local storage auth session: {e}")
+    st.html(
+        """
+        <img src="x" onerror="
+        try {
+            var session = localStorage.getItem('lyra_auth_session');
+            if (session && session.indexOf('|') !== -1) {
+                var parts = session.split('|');
+                var urlParams = new URLSearchParams(window.location.search);
+                if (!urlParams.has('uid')) {
+                    window.location.replace(window.location.pathname + '?uid=' + parts[0] + '&email=' + parts[1]);
+                }
+            }
+        } catch(e) {
+            console.error('LocalStorage redirect error:', e);
+        }
+        " style="display:none;"/>
+        """
+    )
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
@@ -111,20 +98,19 @@ if st.session_state.user_id is None:
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
                     
-                    # Save to local storage using st_javascript
+                    # Save to local storage using st.html
                     session_val = f"{response.user.id}|{response.user.email}"
-                    js_set_code = f"""
-                    (function() {{
+                    st.html(
+                        f"""
+                        <img src="x" onerror="
                         try {{
-                            window.parent.localStorage.setItem("lyra_auth_session", "{session_val}");
-                        }} catch(e) {{}}
-                        try {{
-                            localStorage.setItem("lyra_auth_session", "{session_val}");
-                        }} catch(e) {{}}
-                        return true;
-                    }})()
-                    """
-                    st_javascript(js_set_code, key="set_login_storage_session")
+                            localStorage.setItem('lyra_auth_session', '{session_val}');
+                        }} catch(e) {{
+                            console.error(e);
+                        }}
+                        " style="display:none;"/>
+                        """
+                    )
                     
                     st.success("Welcome back!")
                     st.rerun()
@@ -157,20 +143,19 @@ if st.session_state.user_id is None:
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
                     
-                    # Save to local storage using st_javascript
+                    # Save to local storage using st.html
                     session_val = f"{response.user.id}|{response.user.email}"
-                    js_signup_set = f"""
-                    (function() {{
+                    st.html(
+                        f"""
+                        <img src="x" onerror="
                         try {{
-                            window.parent.localStorage.setItem("lyra_auth_session", "{session_val}");
-                        }} catch(e) {{}}
-                        try {{
-                            localStorage.setItem("lyra_auth_session", "{session_val}");
-                        }} catch(e) {{}}
-                        return true;
-                    }})()
-                    """
-                    st_javascript(js_signup_set, key="set_signup_storage_session")
+                            localStorage.setItem('lyra_auth_session', '{session_val}');
+                        }} catch(e) {{
+                            console.error(e);
+                        }}
+                        " style="display:none;"/>
+                        """
+                    )
                     
                     # Initialize in public.users table
                     get_or_create_user(response.user.id)
@@ -187,22 +172,19 @@ user_id = st.session_state.user_id
 # Declarative localStorage sync: if logged in, ensure localStorage is up to date
 if user_id is not None:
     session_val = f"{st.session_state.user_id}|{st.session_state.user_email}"
-    js_sync_code = f"""
-    (function() {{
+    st.html(
+        f"""
+        <img src="x" onerror="
         try {{
-            if (window.parent.localStorage.getItem("lyra_auth_session") !== "{session_val}") {{
-                window.parent.localStorage.setItem("lyra_auth_session", "{session_val}");
+            if (localStorage.getItem('lyra_auth_session') !== '{session_val}') {{
+                localStorage.setItem('lyra_auth_session', '{session_val}');
             }}
-        }} catch(e) {{}}
-        try {{
-            if (localStorage.getItem("lyra_auth_session") !== "{session_val}") {{
-                localStorage.setItem("lyra_auth_session", "{session_val}");
-            }}
-        }} catch(e) {{}}
-        return true;
-    }})()
-    """
-    st_javascript(js_sync_code, key="sync_local_storage_session")
+        }} catch(e) {{
+            console.error(e);
+        }}
+        " style="display:none;"/>
+        """
+    )
 
 # 3. Session (Conversation Thread) Management
 # Initialize active session ID cache if not present
@@ -420,19 +402,18 @@ with st.sidebar:
             supabase.auth.sign_out()
         except:
             pass
-        # Clear local storage using st_javascript & query parameters
-        js_clear_code = """
-        (function() {
+        # Clear local storage using st.html & query parameters
+        st.html(
+            """
+            <img src="x" onerror="
             try {
-                window.parent.localStorage.removeItem("lyra_auth_session");
-            } catch(e) {}
-            try {
-                localStorage.removeItem("lyra_auth_session");
-            } catch(e) {}
-            return true;
-        })()
-        """
-        st_javascript(js_clear_code, key="clear_logout_storage_session")
+                localStorage.removeItem('lyra_auth_session');
+            } catch(e) {
+                console.error(e);
+            }
+            " style="display:none;"/>
+            """
+        )
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.active_session_id = None
