@@ -19,7 +19,7 @@ if not api_key or api_key == "your_gemini_api_key_here":
 # Initialize the modern Gemini Client
 client = genai.Client(api_key=api_key)
 
-def generate_response(user_input, mode):
+def generate_response(user_input, mode, session_id=None):
     """
     Sends the user input along with chat history and compiled system instructions 
     to the Gemini API using the modern google-genai SDK.
@@ -28,7 +28,7 @@ def generate_response(user_input, mode):
     system_instruction = build_system_prompt(mode)
     
     # 2. Get and format conversation history for the Gemini Client
-    history = get_history()
+    history = get_history(session_id)
     gemini_history = []
     
     for msg in history:

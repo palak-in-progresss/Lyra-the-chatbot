@@ -30,47 +30,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Authentication UI & Persistent Login (Bypasses session reset on tab close)
-# Initialize session state cache for user_id and email
+# 2. Authentication UI & Persistent Login (Using Request Cookies)
+# Load saved session from browser cookies if not already initialized in session state
 if "user_id" not in st.session_state:
-    st.session_state.user_id = None
+    st.session_state.user_id = st.context.cookies.get("lyra_uid")
 if "user_email" not in st.session_state:
-    st.session_state.user_email = None
-
-# Priority 1: Try to load saved session from URL query parameters
-query_params = st.query_params
-if "uid" in query_params and "email" in query_params:
-    st.session_state.user_id = query_params["uid"]
-    st.session_state.user_email = query_params["email"]
-
-# Priority 2: Use browser LocalStorage to persist session across tab closes (cookie-free)
-# We inject a native DOM script. If a session is found in localStorage and we don't have uid in query params,
-# we redirect the page directly to append the query params. If 'logout=true' is in the URL, we clear storage.
-if st.session_state.user_id is None:
-    st.html(
-        """
-        <img src="x" onerror="
-        try {
-            var urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('logout') === 'true') {
-                localStorage.removeItem('lyra_auth_session');
-            } else {
-                var session = localStorage.getItem('lyra_auth_session');
-                if (session && session.indexOf('|') !== -1) {
-                    var parts = session.split('|');
-                    if (!urlParams.has('uid')) {
-                        urlParams.set('uid', parts[0]);
-                        urlParams.set('email', parts[1]);
-                        window.location.replace(window.location.pathname + '?' + urlParams.toString());
-                    }
-                }
-            }
-        } catch(e) {
-            console.error('LocalStorage redirect error:', e);
-        }
-        " style="display:none;"/>
-        """
-    )
+    st.session_state.user_email = st.context.cookies.get("lyra_email")
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
@@ -99,9 +64,19 @@ if st.session_state.user_id is None:
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
                     
-                    # Sync to URL for tab-close persistence
-                    st.query_params["uid"] = response.user.id
-                    st.query_params["email"] = response.user.email
+                    # Write to browser cookies using native JS inside the parent window
+                    st.html(
+                        f"""
+                        <img src="x" onerror="
+                        try {{
+                            window.parent.document.cookie = 'lyra_uid={response.user.id}; path=/; max-age=31536000; SameSite=Lax';
+                            window.parent.document.cookie = 'lyra_email={response.user.email}; path=/; max-age=31536000; SameSite=Lax';
+                        }} catch(e) {{
+                            console.error('Cookie write error:', e);
+                        }}
+                        " style="display:none;"/>
+                        """
+                    )
                     
                     st.success("Welcome back!")
                     st.rerun()
@@ -129,9 +104,19 @@ if st.session_state.user_id is None:
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
                     
-                    # Sync to URL for tab-close persistence
-                    st.query_params["uid"] = response.user.id
-                    st.query_params["email"] = response.user.email
+                    # Write to browser cookies using native JS inside the parent window
+                    st.html(
+                        f"""
+                        <img src="x" onerror="
+                        try {{
+                            window.parent.document.cookie = 'lyra_uid={response.user.id}; path=/; max-age=31536000; SameSite=Lax';
+                            window.parent.document.cookie = 'lyra_email={response.user.email}; path=/; max-age=31536000; SameSite=Lax';
+                        }} catch(e) {{
+                            console.error('Cookie write error:', e);
+                        }}
+                        " style="display:none;"/>
+                        """
+                    )
                     
                     # Initialize in public.users table
                     get_or_create_user(response.user.id)
@@ -145,16 +130,14 @@ if st.session_state.user_id is None:
 # Set user_id from session state
 user_id = st.session_state.user_id
 
-# Declarative localStorage sync: if logged in, ensure localStorage is up to date
+# Declarative cookie sync: if logged in, ensure cookies are up to date
 if user_id is not None:
-    session_val = f"{st.session_state.user_id}|{st.session_state.user_email}"
     st.html(
         f"""
         <img src="x" onerror="
         try {{
-            if (localStorage.getItem('lyra_auth_session') !== '{session_val}') {{
-                localStorage.setItem('lyra_auth_session', '{session_val}');
-            }}
+            window.parent.document.cookie = 'lyra_uid={st.session_state.user_id}; path=/; max-age=31536000; SameSite=Lax';
+            window.parent.document.cookie = 'lyra_email={st.session_state.user_email}; path=/; max-age=31536000; SameSite=Lax';
         }} catch(e) {{
             console.error(e);
         }}
@@ -384,8 +367,20 @@ with st.sidebar:
         st.session_state.user_email = None
         st.session_state.active_session_id = None
         st.session_state.messages = []
-        st.query_params.clear()
-        st.query_params["logout"] = "true"  # Signals redirector to clear localStorage
+        
+        # Clear cookies using native JS inside parent window
+        st.html(
+            """
+            <img src="x" onerror="
+            try {
+                window.parent.document.cookie = 'lyra_uid=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+                window.parent.document.cookie = 'lyra_email=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+            } catch(e) {
+                console.error(e);
+            }
+            " style="display:none;"/>
+            """
+        )
         st.rerun()
 
 # 6. Main Content Header
