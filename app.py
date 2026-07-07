@@ -54,6 +54,10 @@ if user_id is None:
     st.stop()
 
 # 3. Session (Conversation Thread) Management
+# Initialize active session ID cache if not present
+if "active_session_id" not in st.session_state:
+    st.session_state.active_session_id = None
+
 # Fetch all sessions for this user from Supabase
 user_sessions = get_user_sessions(user_id)
 
