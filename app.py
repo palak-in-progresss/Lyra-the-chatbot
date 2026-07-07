@@ -52,6 +52,7 @@ if not user_id_cookie and st.session_state.cookie_check_attempts < 5:
     st.session_state.cookie_check_attempts += 1
     time.sleep(0.1)
     st.rerun()
+    st.stop()
 
 if user_id_cookie:
     st.session_state.user_id = user_id_cookie
@@ -70,6 +71,11 @@ elif st.session_state.user_id is None:
 
 # Active user UUID
 user_id = st.session_state.user_id
+
+# If user ID is still loading from browser cookies, stop execution here
+if user_id is None:
+    st.info("🌌 Loading your Lyra profile...")
+    st.stop()
 
 # 3. Session (Conversation Thread) Management
 # Fetch all sessions for this user from Supabase
