@@ -31,59 +31,46 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-def set_persistent_cookie(name, value):
+def inject_js_redirector():
     """
-    Sets a persistent cookie directly in the browser using document.cookie.
-    This bypasses the session-cookie bug in extra-streamlit-components
-    and keeps the cookie valid for 1 year (365 days).
+    Injects a client-side HTML5 localStorage checker.
+    If no 'uid' is present in the URL query parameters, it reads it from 
+    localStorage (or generates a new one) and redirects the iframe to include it.
+    This bypasses all browser third-party cookie blocks.
     """
     import streamlit.components.v1 as components
-    js_code = f"""
+    js_code = """
     <script>
-    const d = new Date();
-    d.setTime(d.getTime() + (365*24*60*60*1000));
-    let expires = "expires="+ d.toUTCString();
-    document.cookie = "{name}=" + "{value}" + ";" + expires + ";path=/;SameSite=None;Secure";
+    const urlParams = new URLSearchParams(window.location.search);
+    let uid = urlParams.get('uid');
+    let savedUid = localStorage.getItem('lyra_uid');
+
+    if (!uid) {
+        if (savedUid) {
+            window.location.replace(window.location.pathname + '?uid=' + savedUid);
+        } else {
+            let newUid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+            localStorage.setItem('lyra_uid', newUid);
+            window.location.replace(window.location.pathname + '?uid=' + newUid);
+        }
+    } else {
+        if (savedUid !== uid) {
+            localStorage.setItem('lyra_uid', uid);
+        }
+    }
     </script>
     """
     components.html(js_code, height=0)
 
-# 2. User ID Persistence (URL parameters for sharing, cookies for tab close/open persistence)
+# 2. User ID Persistence (HTML5 localStorage based tracking, immune to cookie blocks)
 query_params = st.query_params
+user_id = query_params.get("uid")
 
-# Initialize user_id cache in session state if not present
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
-
-# Read cookie synchronously from request headers (instant, zero delay)
-user_id_cookie = st.context.cookies.get("lyra_user_id")
-
-if "uid" in query_params:
-    user_id = query_params["uid"]
-    st.session_state.user_id = user_id
-    # Sync cookie to browser if it doesn't match the URL uid
-    if user_id_cookie != user_id:
-        set_persistent_cookie("lyra_user_id", user_id)
-else:
-    # URL has no ID. Check if we already have it saved in browser cookies
-    if user_id_cookie:
-        user_id = user_id_cookie
-        st.session_state.user_id = user_id
-        st.query_params["uid"] = user_id
-    # Else check if we have it in session state
-    elif st.session_state.user_id:
-        user_id = st.session_state.user_id
-        st.query_params["uid"] = user_id
-    # Else generate a brand new UUID (first-time visitor)
-    else:
-        generated_id = str(uuid.uuid4())
-        st.session_state.user_id = generated_id
-        st.query_params["uid"] = generated_id
-        user_id = generated_id
-        set_persistent_cookie("lyra_user_id", generated_id)
-
-# If user ID is still loading, stop execution (failsafe)
-if user_id is None:
+if not user_id:
+    inject_js_redirector()
     st.stop()
 
 # 3. Session (Conversation Thread) Management
@@ -182,11 +169,7 @@ with st.sidebar:
     st.markdown("<p style='color:#64748B; font-size:0.9rem; margin-top:0;'>Your AI Learning Assistant</p>", unsafe_allow_html=True)
     st.divider()
     
-    # Temporary debug logs
-    st.sidebar.write("DEBUG User ID:", user_id)
-    st.sidebar.write("DEBUG URL uid:", query_params.get("uid"))
-    st.sidebar.write("DEBUG Cookie value:", user_id_cookie)
-    
+
     # ➕ Create a New Session Button
     if st.button("➕ New Chat", use_container_width=True, type="primary"):
         new_sid = create_session(user_id, "New Chat")
