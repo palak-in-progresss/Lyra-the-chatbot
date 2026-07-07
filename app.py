@@ -2,7 +2,6 @@
 import streamlit as st
 import os
 import uuid
-import extra_streamlit_components as exc
 import time
 
 from chatbot.config import APP_NAME, AVAILABLE_MODES
@@ -31,27 +30,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Authentication UI & Persistent Login (Bypasses session reset on tab close)
-cookie_manager = exc.CookieManager()
-
+# 2. Authentication UI (Supabase Auth - Bypasses all browser cookie/iframe restrictions)
 # Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
-
-# Try to load saved login session synchronously from browser cookies (request headers)
-saved_session = st.context.cookies.get("lyra_auth_session")
-
-# If cookie exists and session state is empty, restore login session
-if saved_session and st.session_state.user_id is None:
-    try:
-        if "|" in saved_session:
-            saved_user_id, saved_user_email = saved_session.split("|", 1)
-            st.session_state.user_id = saved_user_id
-            st.session_state.user_email = saved_user_email
-    except Exception as e:
-        print(f"Error parsing auth session cookie: {e}")
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
@@ -79,20 +63,6 @@ if st.session_state.user_id is None:
                     })
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
-                    
-                    # Save login session to a single persistent cookie (valid for 30 days)
-                    import datetime
-                    cookie_expiry = datetime.datetime.now() + datetime.timedelta(days=30)
-                    session_val = f"{response.user.id}|{response.user.email}"
-                    cookie_manager.set(
-                        cookie="lyra_auth_session",
-                        val=session_val,
-                        expires_at=cookie_expiry,
-                        same_site="none",
-                        secure=True,
-                        key="save_user_session"
-                    )
-                    
                     st.success("Welcome back!")
                     st.rerun()
                 except Exception as e:
@@ -121,20 +91,6 @@ if st.session_state.user_id is None:
                     st.session_state.user_email = response.user.email
                     # Initialize in public.users table
                     get_or_create_user(response.user.id)
-                    
-                    # Save login session to a single persistent cookie (valid for 30 days)
-                    import datetime
-                    cookie_expiry = datetime.datetime.now() + datetime.timedelta(days=30)
-                    session_val = f"{response.user.id}|{response.user.email}"
-                    cookie_manager.set(
-                        cookie="lyra_auth_session",
-                        val=session_val,
-                        expires_at=cookie_expiry,
-                        same_site="none",
-                        secure=True,
-                        key="save_user_session_signup"
-                    )
-                    
                     st.success("Account created successfully!")
                     st.rerun()
                 except Exception as e:
@@ -361,8 +317,6 @@ with st.sidebar:
             supabase.auth.sign_out()
         except:
             pass
-        # Clear persistent cookies
-        cookie_manager.delete("lyra_auth_session", key="del_cookie_session")
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.active_session_id = None
