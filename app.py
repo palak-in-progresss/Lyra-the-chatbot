@@ -30,6 +30,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+st.write("USER_ID:", st.session_state.get("user_id"))
+st.write("QUERY_PARAMS:", st.query_params)
+
+try:
+    st.write("SUPABASE_SESSION:", supabase.auth.get_session())
+except Exception as e:
+    st.error(f"SESSION ERROR: {e}")
+
 # 2. Authentication UI & Persistent Login (Supabase Auth Session Persistence)
 # Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
@@ -212,7 +220,7 @@ if user_id is not None:
                 """
             )
     except Exception as e:
-        pass
+        st.error(f"DEBUG ERROR: {e}")
 
 # 3. Session (Conversation Thread) Management
 if "active_session_id" not in st.session_state:
@@ -430,8 +438,8 @@ with st.sidebar:
     if st.button("🚪 Log Out", use_container_width=True):
         try:
             supabase.auth.sign_out()
-        except:
-            pass
+        except Exception as e:
+            st.error(f"DEBUG ERROR: {e}")
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.active_session_id = None
