@@ -4,21 +4,24 @@ import os
 
 from chatbot.config import APP_NAME, AVAILABLE_MODES
 from chatbot.database import (
-    create_session, 
-    get_user_sessions, 
-    update_session_title, 
-    delete_session
+    create_session,
+    get_user_sessions,
+    update_session_title,
+    delete_session,
+    supabase,
+    get_or_create_user
 )
 from chatbot.memory import (
-    initialize_memory, 
-    get_history, 
-    add_message, 
-    clear_history, 
+    initialize_memory,
+    get_history,
+    add_message,
+    clear_history,
     load_session_into_memory
 )
 from chatbot.llm import generate_response
 from chatbot.features.resume_review import extract_text_from_pdf, evaluate_resume
 from chatbot.utils import clean_response
+from streamlit_cookies_controller import CookieController
 
 # 1. Page Configuration (Must be first Streamlit command)
 st.set_page_config(
@@ -28,53 +31,42 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Authentication — using Supabase refresh token stored in query params
-# This is the ONLY persistent mechanism that survives tab closes in Streamlit:
-# - st.session_state resets when the WebSocket drops (tab close)
-# - Cookies can't be written reliably from Streamlit's sandboxed iframes
-# - localStorage can't be read back to Python synchronously
-# - Query params persist in the browser URL bar and browser history
+# 2. Cookie controller — must be instantiated early, before any st.stop()
+controller = CookieController()
 
-from chatbot.database import supabase, get_or_create_user
+# 3. Authentication — persistent login using real browser cookies
+# Pattern: READ via st.context.cookies (HTTP request headers, always available)
+#          WRITE via CookieController (proper component with allow-same-origin)
 
-# Initialize session state
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
 
-# Try to restore session from URL query params (contains refresh token)
-query_params = st.query_params
-
+# Restore session from browser cookie if session_state is empty (tab was closed/refreshed)
 if st.session_state.user_id is None:
-    refresh_token = query_params.get("rt")
-    if refresh_token:
+    saved = st.context.cookies.get("lyra_auth")
+    if saved and "|" in saved:
         try:
-            # Use Supabase to restore a valid session from the refresh token
-            session_response = supabase.auth.refresh_session(refresh_token)
-            if session_response and session_response.user:
-                st.session_state.user_id = session_response.user.id
-                st.session_state.user_email = session_response.user.email
-                st.session_state.refresh_token = session_response.session.refresh_token
-                # Update query param with the new refresh token (they rotate)
-                st.query_params["rt"] = session_response.session.refresh_token
-        except Exception as e:
-            # Refresh token expired — clear it and show login
-            st.query_params.clear()
+            uid, email = saved.split("|", 1)
+            st.session_state.user_id = uid
+            st.session_state.user_email = email
+        except Exception:
+            pass
 
-# If user is not logged in, render the Auth Page
+# Show login page if not authenticated
 if st.session_state.user_id is None:
     st.markdown("<h1 class='title-gradient' style='text-align:center;'>Welcome to Lyra</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align:center; color:#94A3B8; margin-bottom:30px;'>Your AI Study and Coding Companion</p>", unsafe_allow_html=True)
-    
+
     auth_tab = st.tabs(["🔒 Log In", "📝 Sign Up"])
-    
+
     # LOGIN TAB
     with auth_tab[0]:
         st.markdown("<h3 style='color:#FFFFFF; margin-top:10px;'>Access Your Account</h3>", unsafe_allow_html=True)
         login_email = st.text_input("Email Address", key="login_email_input")
         login_password = st.text_input("Password", type="password", key="login_password_input")
-        
+
         if st.button("🚀 Log In", use_container_width=True, key="login_submit_btn"):
             if not login_email or not login_password:
                 st.error("Please enter both email and password.")
@@ -86,20 +78,20 @@ if st.session_state.user_id is None:
                     })
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
-                    st.session_state.refresh_token = response.session.refresh_token
-                    # Store refresh token in URL — persists across tab closes via browser history
-                    st.query_params["rt"] = response.session.refresh_token
+                    # Write persistent browser cookie — survives tab close, browser restart
+                    session_val = f"{response.user.id}|{response.user.email}"
+                    controller.set("lyra_auth", session_val, max_age=30 * 24 * 60 * 60)
                     st.success("Welcome back!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Login failed: {e}")
-                    
+
     # SIGNUP TAB
     with auth_tab[1]:
         st.markdown("<h3 style='color:#FFFFFF; margin-top:10px;'>Create a New Account</h3>", unsafe_allow_html=True)
         signup_email = st.text_input("Email Address", key="signup_email_input")
         signup_password = st.text_input("Password (min 6 characters)", type="password", key="signup_password_input")
-        
+
         if st.button("✨ Sign Up", use_container_width=True, key="signup_submit_btn"):
             if not signup_email or not signup_password:
                 st.error("Please enter both email and password.")
@@ -113,24 +105,24 @@ if st.session_state.user_id is None:
                     })
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
-                    st.session_state.refresh_token = response.session.refresh_token
-                    st.query_params["rt"] = response.session.refresh_token
+                    # Write persistent browser cookie
+                    session_val = f"{response.user.id}|{response.user.email}"
+                    controller.set("lyra_auth", session_val, max_age=30 * 24 * 60 * 60)
                     get_or_create_user(response.user.id)
                     st.success("Account created successfully!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Signup failed: {e}")
-                    
+
     st.stop()
 
-# Set user_id from session state
+# Logged in — set user_id
 user_id = st.session_state.user_id
 
-# 3. Session (Conversation Thread) Management
+# 4. Session (Conversation Thread) Management
 if "active_session_id" not in st.session_state:
     st.session_state.active_session_id = None
 
-# Fetch all sessions for this user from Supabase
 user_sessions = get_user_sessions(user_id)
 
 if not user_sessions:
@@ -143,30 +135,19 @@ elif st.session_state.active_session_id is None:
 active_session_id = st.session_state.active_session_id
 initialize_memory(active_session_id)
 
-# 4. Modern UI Aesthetics (CSS injection)
+# 5. Modern UI Aesthetics
 st.markdown("""
 <style>
-    /* Import modern Outfit font */
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
-    
-    /* Global theme */
-    html, body, [class*="css"] {
-        font-family: 'Outfit', sans-serif;
-    }
-    
-    /* Main background */
+    html, body, [class*="css"] { font-family: 'Outfit', sans-serif; }
     .stApp {
         background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%);
         min-height: 100vh;
     }
-    
-    /* Sidebar styling */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
         border-right: 1px solid rgba(99, 102, 241, 0.2);
     }
-
-    /* Title gradient text */
     .title-gradient {
         background: linear-gradient(135deg, #818CF8, #A78BFA, #C084FC);
         -webkit-background-clip: text;
@@ -175,15 +156,7 @@ st.markdown("""
         font-weight: 700;
         letter-spacing: -0.5px;
     }
-
-    .subtitle-text {
-        color: #94A3B8;
-        font-size: 1.05rem;
-        font-weight: 400;
-        margin-top: -10px;
-    }
-
-    /* Chat message styling */
+    .subtitle-text { color: #94A3B8; font-size: 1.05rem; font-weight: 400; margin-top: -10px; }
     .stChatMessage {
         background: rgba(30, 41, 59, 0.7) !important;
         border: 1px solid rgba(99, 102, 241, 0.15);
@@ -191,17 +164,6 @@ st.markdown("""
         backdrop-filter: blur(10px);
         margin-bottom: 8px;
     }
-
-    /* Input box styling */
-    .stChatInputContainer {
-        background: rgba(30, 41, 59, 0.8) !important;
-        border: 1px solid rgba(99, 102, 241, 0.3) !important;
-        border-radius: 12px !important;
-        backdrop-filter: blur(10px);
-    }
-
-    /* Primary button */
-    .stButton > button[kind="primary"],
     .stButton > button {
         background: linear-gradient(135deg, #6366F1, #8B5CF6) !important;
         color: white !important;
@@ -210,34 +172,10 @@ st.markdown("""
         font-weight: 600 !important;
         transition: all 0.3s ease !important;
     }
-
     .stButton > button:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4) !important;
     }
-
-    /* Session cards in sidebar */
-    .session-card {
-        background: rgba(30, 41, 59, 0.6);
-        border: 1px solid rgba(99, 102, 241, 0.2);
-        border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 8px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-
-    .session-card:hover {
-        background: rgba(99, 102, 241, 0.15);
-        border-color: rgba(99, 102, 241, 0.4);
-    }
-
-    .session-card.active {
-        background: rgba(99, 102, 241, 0.2);
-        border-color: #6366F1;
-    }
-
-    /* Welcome card */
     .welcome-card {
         background: rgba(30, 41, 59, 0.6);
         border: 1px solid rgba(99, 102, 241, 0.2);
@@ -246,58 +184,37 @@ st.markdown("""
         backdrop-filter: blur(10px);
         margin-bottom: 20px;
     }
-
-    /* Mode selector */
-    [data-testid="stSelectbox"] {
-        background: rgba(30, 41, 59, 0.6);
-    }
-
-    /* Divider */
-    hr {
-        border-color: rgba(99, 102, 241, 0.2) !important;
-    }
-
-    /* Hide Streamlit branding */
+    hr { border-color: rgba(99, 102, 241, 0.2) !important; }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# 5. Sidebar Layout
+# 6. Sidebar
 with st.sidebar:
     st.markdown("<h2 class='title-gradient' style='margin-bottom:5px;'>🌌 Lyra</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color:#64748B; font-size:0.8rem; margin-top:0;'>Your AI Study Companion</p>", unsafe_allow_html=True)
-    
     st.divider()
-    
-    # Mode Selector
+
     st.markdown("<p style='color:#94A3B8; font-size:0.85rem; margin-bottom:5px;'>🎯 Active Mode</p>", unsafe_allow_html=True)
-    selected_mode = st.selectbox(
-        "Mode",
-        options=AVAILABLE_MODES,
-        label_visibility="collapsed",
-        key="mode_selector"
-    )
-    
+    selected_mode = st.selectbox("Mode", options=AVAILABLE_MODES, label_visibility="collapsed", key="mode_selector")
     st.divider()
-    
-    # Conversation sessions
+
     st.markdown("<p style='color:#94A3B8; font-size:0.85rem;'>💬 Conversations</p>", unsafe_allow_html=True)
-    
+
     if st.button("➕ New Chat", use_container_width=True):
         new_session_id = create_session(user_id, "New Chat")
         st.session_state.active_session_id = new_session_id
         clear_history(new_session_id)
         st.rerun()
-    
+
     st.markdown("")
-    
+
     for session in user_sessions:
         session_id = session["id"]
         title = session.get("title", "New Chat")
         is_active = session_id == active_session_id
-        
         col1, col2 = st.columns([4, 1])
         with col1:
             label = f"{'▶ ' if is_active else ''}{title[:28]}{'...' if len(title) > 28 else ''}"
@@ -311,13 +228,11 @@ with st.sidebar:
                 if is_active:
                     st.session_state.active_session_id = None
                 st.rerun()
-    
-    # Resume upload for Resume Reviewer mode
+
     if selected_mode == "📄 Resume Reviewer":
         st.divider()
         st.markdown("<p style='color:#94A3B8; font-size:0.85rem;'>📎 Upload Resume</p>", unsafe_allow_html=True)
         uploaded_file = st.file_uploader("Upload PDF", type=["pdf"], label_visibility="collapsed")
-        
         if uploaded_file is not None:
             if st.button("🔍 Analyze Resume", use_container_width=True):
                 with st.spinner("Analyzing your resume..."):
@@ -326,12 +241,11 @@ with st.sidebar:
                         critique = evaluate_resume(resume_text)
                         add_message("user", f"Uploaded resume '{uploaded_file.name}' for critique.", "Resume Reviewer", user_id, active_session_id)
                         add_message("assistant", critique, "Resume Reviewer", user_id, active_session_id)
-                        st.success("Analysis complete! Review the results in the chat below.")
+                        st.success("Analysis complete!")
                         st.rerun()
                     else:
-                        st.error("Failed to read the PDF. Make sure it contains extractable text.")
+                        st.error("Failed to read the PDF.")
 
-    # Logout section in sidebar
     st.divider()
     st.markdown(f"<p style='color:#64748B; font-size:0.85rem; margin-bottom:5px;'>👤 Logged in as:<br><b style='color:#E2E8F0;'>{st.session_state.user_email}</b></p>", unsafe_allow_html=True)
     if st.button("🚪 Log Out", use_container_width=True):
@@ -339,71 +253,55 @@ with st.sidebar:
             supabase.auth.sign_out()
         except:
             pass
+        controller.remove("lyra_auth")
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.active_session_id = None
         st.session_state.messages = []
-        st.query_params.clear()
         st.rerun()
 
-# 6. Main Content Header
+# 7. Main Chat
 st.markdown("<h1 class='title-gradient'>Lyra</h1>", unsafe_allow_html=True)
-st.markdown(f"<p class='subtitle-text'>Friendly, intelligent, and witty AI companion.</p>", unsafe_allow_html=True)
+st.markdown("<p class='subtitle-text'>Friendly, intelligent, and witty AI companion.</p>", unsafe_allow_html=True)
 
-# Retrieve conversation history for active session
 history = get_history(active_session_id)
 
-# Show welcome greeting if there are no messages in the active session
 if not history:
     st.markdown(f"""
     <div class="welcome-card">
         <h3 style="color:#FFFFFF; margin-top:0;">Hi, I'm {APP_NAME}! 🌌</h3>
-        <p style="color:#94A3B8; font-size:0.95rem;">
-            I am here to assist you in learning, coding, and building projects. 
-            Select one of my specialized modes in the sidebar to start a conversation:
-        </p>
+        <p style="color:#94A3B8; font-size:0.95rem;">Select a mode in the sidebar and start chatting!</p>
         <ul style="color:#94A3B8; font-size:0.9rem; padding-left:20px;">
-            <li><b>General Assistant:</b> General brainstorms or writing code.</li>
-            <li><b>Study Buddy:</b> Active learning recall and note breakdowns.</li>
+            <li><b>General Assistant:</b> Brainstorms, writing, coding help.</li>
+            <li><b>Study Buddy:</b> Active learning and note breakdowns.</li>
             <li><b>DSA Helper:</b> Hint-based guidance and Big-O reviews.</li>
-            <li><b>Career Mentor:</b> Project ideas and interview prep tips.</li>
-            <li><b>Resume Reviewer:</b> Actionable suggestions for your PDF resume.</li>
-            <li><b>Space Mentor:</b> Explore cosmology, astrophysics, and stars.</li>
+            <li><b>Career Mentor:</b> Project ideas and interview prep.</li>
+            <li><b>Resume Reviewer:</b> Actionable PDF resume critique.</li>
+            <li><b>Space Mentor:</b> Cosmology, astrophysics, and stars.</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
 
-# 7. Render Chat History
 for msg in history:
-    role = msg["role"]
-    content = msg["content"]
-    with st.chat_message(role):
-        st.markdown(content)
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-# 8. Chat Input
 prompt = st.chat_input(f"Ask Lyra anything in {selected_mode} mode...")
 
 if prompt:
-    # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
-    
-    # Save user message to DB
     add_message("user", prompt, selected_mode, user_id, active_session_id)
-    
-    # Auto-title session from first message
+
     if len(history) == 0:
         title_preview = prompt[:40] + ("..." if len(prompt) > 40 else "")
         update_session_title(active_session_id, title_preview)
-    
-    # Generate response
+
     with st.chat_message("assistant"):
         with st.spinner("Lyra is thinking..."):
             response_text = generate_response(prompt, selected_mode, active_session_id)
             cleaned = clean_response(response_text)
             st.markdown(cleaned)
-    
-    # Save assistant message to DB
+
     add_message("assistant", cleaned, selected_mode, user_id, active_session_id)
-    
     st.rerun()
