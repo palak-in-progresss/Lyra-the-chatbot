@@ -31,39 +31,26 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Cookie Management for Persistent Anonymous User IDs
-cookie_manager = exc.CookieManager()
+# 2. User ID Persistence via URL Query Parameters (100% immune to cookie blocks)
+query_params = st.query_params
 
-# Initialize session state cache
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
-if "active_session_id" not in st.session_state:
-    st.session_state.active_session_id = None
-
-# Read cookie synchronously from request headers (instant, zero delay)
-user_id_cookie = st.context.cookies.get("lyra_user_id")
-
-if user_id_cookie:
-    # Cookie exists! Load it instantly
-    st.session_state.user_id = user_id_cookie
+if "uid" in query_params:
+    user_id = query_params["uid"]
+    st.session_state.user_id = user_id
 else:
-    # Cookie doesn't exist (first-time visitor), generate a new one
-    if st.session_state.user_id is None:
+    # If not in URL, check if we have it in session state
+    if st.session_state.user_id:
+        user_id = st.session_state.user_id
+        st.query_params["uid"] = user_id
+    else:
+        # First-time visitor: generate a new UUID and set it in the URL bar
         generated_id = str(uuid.uuid4())
         st.session_state.user_id = generated_id
-        cookie_manager.set(
-            cookie="lyra_user_id", 
-            val=generated_id, 
-            max_age=31536000,  # 1 year
-            key="uuid_cookie_setter"
-        )
+        st.query_params["uid"] = generated_id
+        user_id = generated_id
 
-# Active user UUID
-user_id = st.session_state.user_id
-
-# If user ID is still loading from browser cookies, stop execution here
+# If user ID is still loading, stop execution (failsafe)
 if user_id is None:
-    st.info("🌌 Loading your Lyra profile...")
     st.stop()
 
 # 3. Session (Conversation Thread) Management
