@@ -21,7 +21,7 @@ genai.configure(api_key=api_key)
 def generate_response(user_input, mode):
     """
     Sends the user input along with chat history and compiled system instructions 
-    to the Gemini API, and returns the response.
+    to the Gemini API with Google Search Grounding enabled.
     """
     # 1. Build the system prompt for the active mode
     system_instruction = build_system_prompt(mode)
@@ -31,7 +31,6 @@ def generate_response(user_input, mode):
     gemini_history = []
     
     for msg in history:
-        # Gemini API expects 'model' instead of 'assistant'
         gemini_role = "model" if msg["role"] == "assistant" else "user"
         gemini_history.append({
             "role": gemini_role,
@@ -39,10 +38,11 @@ def generate_response(user_input, mode):
         })
     
     try:
-        # 3. Initialize the Gemini Model with system instruction
+        # 3. Initialize the Gemini Model with system instruction and Google Search Grounding
         model = genai.GenerativeModel(
             model_name=MODEL_NAME,
-            system_instruction=system_instruction
+            system_instruction=system_instruction,
+            tools="google_search"  # Enables real-time Google search search grounding
         )
         
         # 4. Start the chat session with existing history
@@ -54,7 +54,6 @@ def generate_response(user_input, mode):
         return response.text
         
     except Exception as e:
-        # Catch network errors, API failures, quota limits, etc.
         error_msg = f"Sorry! I encountered an error communicating with Gemini. Details: {str(e)}"
         print(f"Error in LLM Call: {e}")
         return error_msg

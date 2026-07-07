@@ -42,22 +42,23 @@ if "user_id" not in st.session_state:
 if "active_session_id" not in st.session_state:
     st.session_state.active_session_id = None
 
-# Read cookie
+# Read all cookies
 cookies = cookie_manager.get_all()
-
-# If cookie manager is still loading (cookies is empty), wait briefly and retry (max 3 times)
-if not cookies and st.session_state.cookie_check_attempts < 3:
-    st.session_state.cookie_check_attempts += 1
-    time.sleep(0.15)
-    st.rerun()
-
-# Read our specific cookie
 user_id_cookie = cookies.get("lyra_user_id")
+
+# If the specific 'lyra_user_id' cookie is not loaded yet, wait briefly and retry (max 5 times)
+# This prevents other browser cookies from bypassing the loading wait.
+if not user_id_cookie and st.session_state.cookie_check_attempts < 5:
+    st.session_state.cookie_check_attempts += 1
+    time.sleep(0.1)
+    st.rerun()
 
 if user_id_cookie:
     st.session_state.user_id = user_id_cookie
+    # Reset attempt counter once loaded successfully
+    st.session_state.cookie_check_attempts = 0
 elif st.session_state.user_id is None:
-    # Generate and set a new UUID if no cookie exists in browser
+    # If we waited and still no cookie was found, create a new one (first-time visitor)
     generated_id = str(uuid.uuid4())
     st.session_state.user_id = generated_id
     cookie_manager.set(
