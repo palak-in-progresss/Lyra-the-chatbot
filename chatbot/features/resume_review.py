@@ -1,8 +1,20 @@
 # chatbot/features/resume_review.py
+import os
 from pypdf import PdfReader
-import google.generativeai as genai
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
 from chatbot.config import MODEL_NAME
 from chatbot.prompts import build_system_prompt
+
+# Load environment variables
+load_dotenv()
+
+# Retrieve API key
+api_key = os.getenv("GEMINI_API_KEY")
+
+# Initialize modern Gemini Client
+client = genai.Client(api_key=api_key)
 
 def extract_text_from_pdf(pdf_file):
     """
@@ -42,7 +54,7 @@ def evaluate_resume(resume_text):
     3. **Actionable Suggestions**: Concrete wording changes or phrasing improvements.
     4. **ATS Recommendations**: How compatible this resume is with Applicant Tracking Systems, and how to improve parsing.
     5. **Missing Skills**: Crucial technologies, methodologies, or certifications that are standard in this candidate's field but missing here.
-
+ 
     Resume Content:
     ---
     {resume_text}
@@ -50,14 +62,14 @@ def evaluate_resume(resume_text):
     """
     
     try:
-        # Initialize model with Resume Reviewer persona
-        model = genai.GenerativeModel(
-            model_name=MODEL_NAME,
-            system_instruction=system_instruction
+        # Generate the analysis using the modern SDK
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction
+            )
         )
-        
-        # Generate the analysis
-        response = model.generate_content(prompt)
         return response.text
         
     except Exception as e:
