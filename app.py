@@ -182,6 +182,11 @@ with st.sidebar:
     st.markdown("<p style='color:#64748B; font-size:0.9rem; margin-top:0;'>Your AI Learning Assistant</p>", unsafe_allow_html=True)
     st.divider()
     
+    # Temporary debug logs
+    st.sidebar.write("DEBUG User ID:", user_id)
+    st.sidebar.write("DEBUG URL uid:", query_params.get("uid"))
+    st.sidebar.write("DEBUG Cookie value:", user_id_cookie)
+    
     # ➕ Create a New Session Button
     if st.button("➕ New Chat", use_container_width=True, type="primary"):
         new_sid = create_session(user_id, "New Chat")
