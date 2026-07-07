@@ -45,18 +45,24 @@ if "uid" in query_params and "email" in query_params:
 
 # Priority 2: Use browser LocalStorage to persist session across tab closes (cookie-free)
 # We inject a native DOM script. If a session is found in localStorage and we don't have uid in query params,
-# we redirect the page directly to append the query params.
+# we redirect the page directly to append the query params. If 'logout=true' is in the URL, we clear storage.
 if st.session_state.user_id is None:
     st.html(
         """
         <img src="x" onerror="
         try {
-            var session = localStorage.getItem('lyra_auth_session');
-            if (session && session.indexOf('|') !== -1) {
-                var parts = session.split('|');
-                var urlParams = new URLSearchParams(window.location.search);
-                if (!urlParams.has('uid')) {
-                    window.location.replace(window.location.pathname + '?uid=' + parts[0] + '&email=' + parts[1]);
+            var urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('logout') === 'true') {
+                localStorage.removeItem('lyra_auth_session');
+            } else {
+                var session = localStorage.getItem('lyra_auth_session');
+                if (session && session.indexOf('|') !== -1) {
+                    var parts = session.split('|');
+                    if (!urlParams.has('uid')) {
+                        urlParams.set('uid', parts[0]);
+                        urlParams.set('email', parts[1]);
+                        window.location.replace(window.location.pathname + '?' + urlParams.toString());
+                    }
                 }
             }
         } catch(e) {
@@ -374,23 +380,12 @@ with st.sidebar:
             supabase.auth.sign_out()
         except:
             pass
-        # Clear local storage using st.html & query parameters
-        st.html(
-            """
-            <img src="x" onerror="
-            try {
-                localStorage.removeItem('lyra_auth_session');
-            } catch(e) {
-                console.error(e);
-            }
-            " style="display:none;"/>
-            """
-        )
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.active_session_id = None
         st.session_state.messages = []
         st.query_params.clear()
+        st.query_params["logout"] = "true"  # Signals redirector to clear localStorage
         st.rerun()
 
 # 6. Main Content Header
