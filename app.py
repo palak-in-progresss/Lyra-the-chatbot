@@ -33,6 +33,7 @@ st.set_page_config(
 
 # 2. User ID Persistence (URL parameters for sharing, cookies for tab close/open persistence)
 query_params = st.query_params
+cookie_manager = exc.CookieManager()
 
 # Initialize user_id cache in session state if not present
 if "user_id" not in st.session_state:
