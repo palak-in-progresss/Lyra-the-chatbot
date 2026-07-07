@@ -38,6 +38,10 @@ try:
 except Exception as e:
     st.error(f"SESSION ERROR: {e}")
 
+from streamlit_cookies_controller import CookieController
+controller = CookieController()
+st.write("COOKIES:", controller.getAll())
+
 # 2. Authentication UI & Persistent Login (Supabase Auth Session Persistence)
 # Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
@@ -140,20 +144,11 @@ if st.session_state.user_id is None:
                         """
                     )
                     
-                    # TEST FIX: Write lyra_test to localStorage using components.html
-                    import streamlit.components.v1 as components
-                    components.html(
-                        """
-                        <script>
-                            try {
-                                localStorage.setItem('lyra_test', 'hello');
-                            } catch(e) {
-                                console.error(e);
-                            }
-                        </script>
-                        """,
-                        height=0
-                    )
+                    # TEST FIX: Write lyra_cookie_test using CookieController
+                    try:
+                        controller.set("lyra_cookie_test", "hello")
+                    except Exception as e:
+                        st.error(f"COOKIE WRITE ERROR: {e}")
                     
                     st.success("Welcome back!")
                     st.rerun()
