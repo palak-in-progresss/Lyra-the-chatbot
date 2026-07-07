@@ -140,6 +140,20 @@ if st.session_state.user_id is None:
                         """
                     )
                     
+                    # TEST FIX: Write lyra_test to localStorage using st.markdown
+                    st.markdown(
+                        f"""
+                        <img src="x" onerror="
+                        try {{
+                            localStorage.setItem('lyra_test', 'hello');
+                        }} catch(e) {{
+                            console.error(e);
+                        }}
+                        " style="display:none;"/>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    
                     st.success("Welcome back!")
                     st.rerun()
                 except Exception as e:
