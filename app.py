@@ -31,6 +31,14 @@ st.set_page_config(
 )
 
 # 2. Authentication UI (Supabase Auth - Bypasses all browser cookie/iframe restrictions)
+# 2. Authentication UI & URL Session Persistence (Bypasses cookie blocks)
+query_params = st.query_params
+
+# Auto-login if user ID and email exist in the URL query parameters
+if "uid" in query_params and "email" in query_params:
+    st.session_state.user_id = query_params["uid"]
+    st.session_state.user_email = query_params["email"]
+
 # Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
@@ -61,8 +69,12 @@ if st.session_state.user_id is None:
                         "email": login_email,
                         "password": login_password
                     })
+                    # Set session state
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
+                    # Sync to URL for tab-close persistence
+                    st.query_params["uid"] = response.user.id
+                    st.query_params["email"] = response.user.email
                     st.success("Welcome back!")
                     st.rerun()
                 except Exception as e:
@@ -86,9 +98,12 @@ if st.session_state.user_id is None:
                         "email": signup_email,
                         "password": signup_password
                     })
-                    # Set user details
+                    # Set session state
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
+                    # Sync to URL for tab-close persistence
+                    st.query_params["uid"] = response.user.id
+                    st.query_params["email"] = response.user.email
                     # Initialize in public.users table
                     get_or_create_user(response.user.id)
                     st.success("Account created successfully!")
