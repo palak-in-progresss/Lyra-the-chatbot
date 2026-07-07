@@ -31,27 +31,49 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. User ID Persistence via URL Query Parameters (100% immune to cookie blocks)
+# 2. User ID Persistence (URL parameters for sharing, cookies for tab close/open persistence)
 query_params = st.query_params
 
 # Initialize user_id cache in session state if not present
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 
+# Read cookie synchronously from request headers (instant, zero delay)
+user_id_cookie = st.context.cookies.get("lyra_user_id")
+
 if "uid" in query_params:
     user_id = query_params["uid"]
     st.session_state.user_id = user_id
+    # Sync cookie to browser if it doesn't match the URL uid
+    if user_id_cookie != user_id:
+        cookie_manager.set(
+            cookie="lyra_user_id",
+            val=user_id,
+            max_age=31536000,
+            key="cookie_syncer"
+        )
 else:
-    # If not in URL, check if we have it in session state
-    if st.session_state.user_id:
+    # URL has no ID. Check if we already have it saved in browser cookies
+    if user_id_cookie:
+        user_id = user_id_cookie
+        st.session_state.user_id = user_id
+        st.query_params["uid"] = user_id
+    # Else check if we have it in session state
+    elif st.session_state.user_id:
         user_id = st.session_state.user_id
         st.query_params["uid"] = user_id
+    # Else generate a brand new UUID (first-time visitor)
     else:
-        # First-time visitor: generate a new UUID and set it in the URL bar
         generated_id = str(uuid.uuid4())
         st.session_state.user_id = generated_id
         st.query_params["uid"] = generated_id
         user_id = generated_id
+        cookie_manager.set(
+            cookie="lyra_user_id", 
+            val=generated_id, 
+            max_age=31536000,  # 1 year
+            key="uuid_cookie_setter"
+        )
 
 # If user ID is still loading, stop execution (failsafe)
 if user_id is None:
