@@ -34,40 +34,29 @@ st.set_page_config(
 # 2. Cookie Management for Persistent Anonymous User IDs
 cookie_manager = exc.CookieManager()
 
-# Initialize session_state cache for user_id to prevent double generation during load latency
-if "cookie_check_attempts" not in st.session_state:
-    st.session_state.cookie_check_attempts = 0
+# Initialize session state cache
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "active_session_id" not in st.session_state:
     st.session_state.active_session_id = None
 
-# Read all cookies
-cookies = cookie_manager.get_all()
-user_id_cookie = cookies.get("lyra_user_id")
-
-# If the specific 'lyra_user_id' cookie is not loaded yet, wait briefly and retry (max 5 times)
-# This prevents other browser cookies from bypassing the loading wait.
-if not user_id_cookie and st.session_state.cookie_check_attempts < 5:
-    st.session_state.cookie_check_attempts += 1
-    time.sleep(0.1)
-    st.rerun()
-    st.stop()
+# Read cookie synchronously from request headers (instant, zero delay)
+user_id_cookie = st.context.cookies.get("lyra_user_id")
 
 if user_id_cookie:
+    # Cookie exists! Load it instantly
     st.session_state.user_id = user_id_cookie
-    # Reset attempt counter once loaded successfully
-    st.session_state.cookie_check_attempts = 0
-elif st.session_state.user_id is None:
-    # If we waited and still no cookie was found, create a new one (first-time visitor)
-    generated_id = str(uuid.uuid4())
-    st.session_state.user_id = generated_id
-    cookie_manager.set(
-        cookie="lyra_user_id", 
-        val=generated_id, 
-        max_age=31536000,  # 1 year
-        key="uuid_cookie_setter"
-    )
+else:
+    # Cookie doesn't exist (first-time visitor), generate a new one
+    if st.session_state.user_id is None:
+        generated_id = str(uuid.uuid4())
+        st.session_state.user_id = generated_id
+        cookie_manager.set(
+            cookie="lyra_user_id", 
+            val=generated_id, 
+            max_age=31536000,  # 1 year
+            key="uuid_cookie_setter"
+        )
 
 # Active user UUID
 user_id = st.session_state.user_id
