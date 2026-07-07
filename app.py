@@ -32,10 +32,7 @@ st.set_page_config(
 
 # 2. Authentication UI & Persistent Login (Using Request Cookies)
 # Load saved session from browser cookies if not already initialized in session state
-if "user_id" not in st.session_state:
-    st.session_state.user_id = st.context.cookies.get("lyra_uid")
-if "user_email" not in st.session_state:
-    st.session_state.user_email = st.context.cookies.get("lyra_email")
+st.write("COOKIE UID:", st.context.cookies.get("lyra_uid"))
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
