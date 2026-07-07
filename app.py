@@ -43,24 +43,34 @@ if "uid" in query_params and "email" in query_params:
     st.session_state.user_id = query_params["uid"]
     st.session_state.user_email = query_params["email"]
 
-# Priority 2: Use browser LocalStorage to persist session across tab closes
-from streamlit_local_storage import LocalStorage
-localS = LocalStorage()
+# Priority 2: Use browser LocalStorage to persist session across tab closes (cookie-free)
+from streamlit_javascript import st_javascript
 
-storage_data = localS.getAll()
+js_get_code = """
+(function() {
+    try {
+        var s = window.parent.localStorage.getItem("lyra_auth_session");
+        if (s) return s;
+    } catch(e) {}
+    try {
+        var s2 = localStorage.getItem("lyra_auth_session");
+        if (s2) return s2;
+    } catch(e) {}
+    return "NO_SESSION";
+})()
+"""
 
-# Show a clean loading message on first load until local storage is ready
-if storage_data is None and st.session_state.user_id is None:
-    st.info("🌌 Loading your Lyra profile...")
-    st.stop()
-
-# Auto-login if session exists in local storage
-if st.session_state.user_id is None and storage_data:
-    saved_session = storage_data.get("lyra_auth_session")
-    if saved_session:
+# If URL is clean, fetch from browser local storage
+if st.session_state.user_id is None:
+    js_val = st_javascript(js_get_code, key="get_local_storage_session")
+    if js_val == 0:
+        # Component is still loading in browser, show loader and stop
+        st.info("🌌 Loading your Lyra profile...")
+        st.stop()
+    elif js_val and js_val != "NO_SESSION":
         try:
-            if "|" in saved_session:
-                saved_user_id, saved_user_email = saved_session.split("|", 1)
+            if "|" in js_val:
+                saved_user_id, saved_user_email = js_val.split("|", 1)
                 st.session_state.user_id = saved_user_id
                 st.session_state.user_email = saved_user_email
                 # Write to query params so subsequent navigation is instant
@@ -101,9 +111,20 @@ if st.session_state.user_id is None:
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
                     
-                    # Save to local storage
+                    # Save to local storage using st_javascript
                     session_val = f"{response.user.id}|{response.user.email}"
-                    localS.setItem("lyra_auth_session", session_val)
+                    js_set_code = f"""
+                    (function() {{
+                        try {{
+                            window.parent.localStorage.setItem("lyra_auth_session", "{session_val}");
+                        }} catch(e) {{}}
+                        try {{
+                            localStorage.setItem("lyra_auth_session", "{session_val}");
+                        }} catch(e) {{}}
+                        return true;
+                    }})()
+                    """
+                    st_javascript(js_set_code, key="set_login_storage_session")
                     
                     st.success("Welcome back!")
                     st.rerun()
@@ -136,9 +157,20 @@ if st.session_state.user_id is None:
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
                     
-                    # Save to local storage
+                    # Save to local storage using st_javascript
                     session_val = f"{response.user.id}|{response.user.email}"
-                    localS.setItem("lyra_auth_session", session_val)
+                    js_signup_set = f"""
+                    (function() {{
+                        try {{
+                            window.parent.localStorage.setItem("lyra_auth_session", "{session_val}");
+                        }} catch(e) {{}}
+                        try {{
+                            localStorage.setItem("lyra_auth_session", "{session_val}");
+                        }} catch(e) {{}}
+                        return true;
+                    }})()
+                    """
+                    st_javascript(js_signup_set, key="set_signup_storage_session")
                     
                     # Initialize in public.users table
                     get_or_create_user(response.user.id)
@@ -151,6 +183,26 @@ if st.session_state.user_id is None:
 
 # Set user_id from session state
 user_id = st.session_state.user_id
+
+# Declarative localStorage sync: if logged in, ensure localStorage is up to date
+if user_id is not None:
+    session_val = f"{st.session_state.user_id}|{st.session_state.user_email}"
+    js_sync_code = f"""
+    (function() {{
+        try {{
+            if (window.parent.localStorage.getItem("lyra_auth_session") !== "{session_val}") {{
+                window.parent.localStorage.setItem("lyra_auth_session", "{session_val}");
+            }}
+        }} catch(e) {{}}
+        try {{
+            if (localStorage.getItem("lyra_auth_session") !== "{session_val}") {{
+                localStorage.setItem("lyra_auth_session", "{session_val}");
+            }}
+        }} catch(e) {{}}
+        return true;
+    }})()
+    """
+    st_javascript(js_sync_code, key="sync_local_storage_session")
 
 # 3. Session (Conversation Thread) Management
 # Initialize active session ID cache if not present
@@ -368,8 +420,19 @@ with st.sidebar:
             supabase.auth.sign_out()
         except:
             pass
-        # Clear local storage & query parameters
-        localS.deleteItem("lyra_auth_session")
+        # Clear local storage using st_javascript & query parameters
+        js_clear_code = """
+        (function() {
+            try {
+                window.parent.localStorage.removeItem("lyra_auth_session");
+            } catch(e) {}
+            try {
+                localStorage.removeItem("lyra_auth_session");
+            } catch(e) {}
+            return true;
+        })()
+        """
+        st_javascript(js_clear_code, key="clear_logout_storage_session")
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.active_session_id = None
