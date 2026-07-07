@@ -30,9 +30,61 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Authentication UI & Persistent Login (Using Request Cookies)
-# Load saved session from browser cookies if not already initialized in session state
-st.write("COOKIE UID:", st.context.cookies.get("lyra_uid"))
+# 2. Authentication UI & Persistent Login (Supabase Auth Session Persistence)
+# Initialize session state cache for user_id and email
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
+
+# Priority 1: Restore Supabase auth session from URL query parameters
+query_params = st.query_params
+if "access_token" in query_params and "refresh_token" in query_params:
+    access_token = query_params["access_token"]
+    refresh_token = query_params["refresh_token"]
+    try:
+        response = supabase.auth.set_session(access_token, refresh_token)
+        st.session_state.user_id = response.user.id
+        st.session_state.user_email = response.user.email
+    except Exception as e:
+        # Clear invalid session from localStorage
+        st.html(
+            """
+            <img src="x" onerror="
+            try {
+                localStorage.removeItem('lyra_sb_session');
+            } catch(e) {}
+            " style="display:none;"/>
+            """
+        )
+    finally:
+        st.query_params.clear()
+        st.rerun()
+
+# Priority 2: Use browser LocalStorage to check for saved Supabase session on startup
+if st.session_state.user_id is None:
+    st.html(
+        """
+        <img src="x" onerror="
+        try {
+            var sessionStr = localStorage.getItem('lyra_sb_session');
+            if (sessionStr) {
+                var session = JSON.parse(sessionStr);
+                if (session && session.access_token && session.refresh_token) {
+                    var redirectUrl = '?access_token=' + encodeURIComponent(session.access_token) + '&refresh_token=' + encodeURIComponent(session.refresh_token);
+                    try {
+                        window.parent.location.replace(redirectUrl);
+                    } catch(e) {
+                        window.location.replace(redirectUrl);
+                    }
+                }
+            }
+        } catch(e) {
+            console.error('Session restoration error:', e);
+        }
+        " style="display:none;"/>
+        """
+    )
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
@@ -61,15 +113,20 @@ if st.session_state.user_id is None:
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
                     
-                    # Write to browser cookies using native JS inside the parent window
+                    # Write Supabase Session to LocalStorage using JS
+                    access_token = response.session.access_token
+                    refresh_token = response.session.refresh_token
                     st.html(
                         f"""
                         <img src="x" onerror="
                         try {{
-                            window.parent.document.cookie = 'lyra_uid={response.user.id}; path=/; max-age=31536000; SameSite=Lax';
-                            window.parent.document.cookie = 'lyra_email={response.user.email}; path=/; max-age=31536000; SameSite=Lax';
+                            var sessionObj = {{
+                                access_token: '{access_token}',
+                                refresh_token: '{refresh_token}'
+                            }};
+                            localStorage.setItem('lyra_sb_session', JSON.stringify(sessionObj));
                         }} catch(e) {{
-                            console.error('Cookie write error:', e);
+                            console.error('LocalStorage write error:', e);
                         }}
                         " style="display:none;"/>
                         """
@@ -101,15 +158,20 @@ if st.session_state.user_id is None:
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
                     
-                    # Write to browser cookies using native JS inside the parent window
+                    # Write Supabase Session to LocalStorage using JS
+                    access_token = response.session.access_token
+                    refresh_token = response.session.refresh_token
                     st.html(
                         f"""
                         <img src="x" onerror="
                         try {{
-                            window.parent.document.cookie = 'lyra_uid={response.user.id}; path=/; max-age=31536000; SameSite=Lax';
-                            window.parent.document.cookie = 'lyra_email={response.user.email}; path=/; max-age=31536000; SameSite=Lax';
+                            var sessionObj = {{
+                                access_token: '{access_token}',
+                                refresh_token: '{refresh_token}'
+                            }};
+                            localStorage.setItem('lyra_sb_session', JSON.stringify(sessionObj));
                         }} catch(e) {{
-                            console.error('Cookie write error:', e);
+                            console.error('LocalStorage write error:', e);
                         }}
                         " style="display:none;"/>
                         """
@@ -127,20 +189,30 @@ if st.session_state.user_id is None:
 # Set user_id from session state
 user_id = st.session_state.user_id
 
-# Declarative cookie sync: if logged in, ensure cookies are up to date
+# Declarative session sync: if logged in, ensure localStorage contains the latest tokens
 if user_id is not None:
-    st.html(
-        f"""
-        <img src="x" onerror="
-        try {{
-            window.parent.document.cookie = 'lyra_uid={st.session_state.user_id}; path=/; max-age=31536000; SameSite=Lax';
-            window.parent.document.cookie = 'lyra_email={st.session_state.user_email}; path=/; max-age=31536000; SameSite=Lax';
-        }} catch(e) {{
-            console.error(e);
-        }}
-        " style="display:none;"/>
-        """
-    )
+    try:
+        session = supabase.auth.get_session()
+        if session is not None:
+            access_token = session.access_token
+            refresh_token = session.refresh_token
+            st.html(
+                f"""
+                <img src="x" onerror="
+                try {{
+                    var sessionObj = {{
+                        access_token: '{access_token}',
+                        refresh_token: '{refresh_token}'
+                    }};
+                    localStorage.setItem('lyra_sb_session', JSON.stringify(sessionObj));
+                }} catch(e) {{
+                    console.error(e);
+                }}
+                " style="display:none;"/>
+                """
+            )
+    except Exception as e:
+        pass
 
 # 3. Session (Conversation Thread) Management
 if "active_session_id" not in st.session_state:
@@ -365,13 +437,12 @@ with st.sidebar:
         st.session_state.active_session_id = None
         st.session_state.messages = []
         
-        # Clear cookies using native JS inside parent window
+        # Clear Supabase Session from browser LocalStorage
         st.html(
             """
             <img src="x" onerror="
             try {
-                window.parent.document.cookie = 'lyra_uid=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
-                window.parent.document.cookie = 'lyra_email=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+                localStorage.removeItem('lyra_sb_session');
             } catch(e) {
                 console.error(e);
             }
