@@ -34,6 +34,10 @@ st.set_page_config(
 # 2. User ID Persistence via URL Query Parameters (100% immune to cookie blocks)
 query_params = st.query_params
 
+# Initialize user_id cache in session state if not present
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+
 if "uid" in query_params:
     user_id = query_params["uid"]
     st.session_state.user_id = user_id
