@@ -43,7 +43,7 @@ def set_persistent_cookie(name, value):
     const d = new Date();
     d.setTime(d.getTime() + (365*24*60*60*1000));
     let expires = "expires="+ d.toUTCString();
-    document.cookie = "{name}=" + "{value}" + ";" + expires + ";path=/;SameSite=Strict;Secure";
+    document.cookie = "{name}=" + "{value}" + ";" + expires + ";path=/;SameSite=None;Secure";
     </script>
     """
     components.html(js_code, height=0)
