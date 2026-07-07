@@ -30,36 +30,31 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-from streamlit_cookies_controller import CookieController
-from datetime import datetime, timedelta
-
-# Initialize Cookie Controller
-controller = CookieController()
-
 # Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
 
-# Restore Supabase session from browser cookies on startup
+# Restore Supabase session instantly on the very first run using native Streamlit context cookies
 if st.session_state.user_id is None:
-    access_token = controller.get("lyra_access_token")
-    refresh_token = controller.get("lyra_refresh_token")
+    cookies = st.context.cookies
+    access_token = cookies.get("lyra_access_token")
+    refresh_token = cookies.get("lyra_refresh_token")
     
     if access_token and refresh_token:
         try:
             response = supabase.auth.set_session(access_token, refresh_token)
             st.session_state.user_id = response.user.id
             st.session_state.user_email = response.user.email
-            st.rerun()
         except Exception as e:
-            try:
-                controller.remove("lyra_access_token")
-                controller.remove("lyra_refresh_token")
-            except:
-                pass
-            st.rerun()
+            pass
+
+from streamlit_cookies_controller import CookieController
+from datetime import datetime, timedelta
+
+# Initialize Cookie Controller for set/remove actions
+controller = CookieController()
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
