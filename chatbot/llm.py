@@ -39,11 +39,11 @@ def generate_response(user_input, mode):
     
     try:
         # 3. Initialize the Gemini Model with system instruction and Google Search Grounding
-       model = genai.GenerativeModel(
+        model = genai.GenerativeModel(
             model_name=MODEL_NAME,
-             system_instruction=system_instruction,
-             tools=[{"google_search": {}}]  # Correct legacy format for search grounding
-            )
+            system_instruction=system_instruction,
+            tools=[{"google_search": {}}]  # Correct legacy format for search grounding
+        )
         
         # 4. Start the chat session with existing history
         chat = model.start_chat(history=gemini_history)
