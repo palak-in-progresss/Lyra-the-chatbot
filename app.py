@@ -30,73 +30,36 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.write("USER_ID:", st.session_state.get("user_id"))
-st.write("QUERY_PARAMS:", st.query_params)
-
-try:
-    st.write("SUPABASE_SESSION:", supabase.auth.get_session())
-except Exception as e:
-    st.error(f"SESSION ERROR: {e}")
-
 from streamlit_cookies_controller import CookieController
-controller = CookieController()
-st.write("COOKIES:", controller.getAll())
+from datetime import datetime, timedelta
 
-# 2. Authentication UI & Persistent Login (Supabase Auth Session Persistence)
+# Initialize Cookie Controller
+controller = CookieController()
+
 # Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
 
-# Priority 1: Restore Supabase auth session from URL query parameters
-query_params = st.query_params
-if "access_token" in query_params and "refresh_token" in query_params:
-    access_token = query_params["access_token"]
-    refresh_token = query_params["refresh_token"]
-    try:
-        response = supabase.auth.set_session(access_token, refresh_token)
-        st.session_state.user_id = response.user.id
-        st.session_state.user_email = response.user.email
-    except Exception as e:
-        # Clear invalid session from localStorage
-        st.html(
-            """
-            <img src="x" onerror="
-            try {
-                localStorage.removeItem('lyra_sb_session');
-            } catch(e) {}
-            " style="display:none;"/>
-            """
-        )
-    finally:
-        st.query_params.clear()
-        st.rerun()
-
-# Priority 2: Use browser LocalStorage to check for saved Supabase session on startup
+# Restore Supabase session from browser cookies on startup
 if st.session_state.user_id is None:
-    st.html(
-        """
-        <img src="x" onerror="
-        try {
-            var sessionStr = localStorage.getItem('lyra_sb_session');
-            if (sessionStr) {
-                var session = JSON.parse(sessionStr);
-                if (session && session.access_token && session.refresh_token) {
-                    var redirectUrl = '?access_token=' + encodeURIComponent(session.access_token) + '&refresh_token=' + encodeURIComponent(session.refresh_token);
-                    try {
-                        window.parent.location.replace(redirectUrl);
-                    } catch(e) {
-                        window.location.replace(redirectUrl);
-                    }
-                }
-            }
-        } catch(e) {
-            console.error('Session restoration error:', e);
-        }
-        " style="display:none;"/>
-        """
-    )
+    access_token = controller.get("lyra_access_token")
+    refresh_token = controller.get("lyra_refresh_token")
+    
+    if access_token and refresh_token:
+        try:
+            response = supabase.auth.set_session(access_token, refresh_token)
+            st.session_state.user_id = response.user.id
+            st.session_state.user_email = response.user.email
+            st.rerun()
+        except Exception as e:
+            try:
+                controller.remove("lyra_access_token")
+                controller.remove("lyra_refresh_token")
+            except:
+                pass
+            st.rerun()
 
 # If user is not logged in, render the Auth Page
 if st.session_state.user_id is None:
@@ -125,30 +88,10 @@ if st.session_state.user_id is None:
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
                     
-                    # Write Supabase Session to LocalStorage using JS
-                    access_token = response.session.access_token
-                    refresh_token = response.session.refresh_token
-                    st.html(
-                        f"""
-                        <img src="x" onerror="
-                        try {{
-                            var sessionObj = {{
-                                access_token: '{access_token}',
-                                refresh_token: '{refresh_token}'
-                            }};
-                            localStorage.setItem('lyra_sb_session', JSON.stringify(sessionObj));
-                        }} catch(e) {{
-                            console.error('LocalStorage write error:', e);
-                        }}
-                        " style="display:none;"/>
-                        """
-                    )
-                    
-                    # TEST FIX: Write lyra_cookie_test using CookieController
-                    try:
-                        controller.set("lyra_cookie_test", "hello")
-                    except Exception as e:
-                        st.error(f"COOKIE WRITE ERROR: {e}")
+                    # Store Supabase session tokens in cookies (valid for 7 days)
+                    expires_at = datetime.now() + timedelta(days=7)
+                    controller.set("lyra_access_token", response.session.access_token, expires=expires_at)
+                    controller.set("lyra_refresh_token", response.session.refresh_token, expires=expires_at)
                     
                     st.success("Welcome back!")
                     st.rerun()
@@ -176,24 +119,10 @@ if st.session_state.user_id is None:
                     st.session_state.user_id = response.user.id
                     st.session_state.user_email = response.user.email
                     
-                    # Write Supabase Session to LocalStorage using JS
-                    access_token = response.session.access_token
-                    refresh_token = response.session.refresh_token
-                    st.html(
-                        f"""
-                        <img src="x" onerror="
-                        try {{
-                            var sessionObj = {{
-                                access_token: '{access_token}',
-                                refresh_token: '{refresh_token}'
-                            }};
-                            localStorage.setItem('lyra_sb_session', JSON.stringify(sessionObj));
-                        }} catch(e) {{
-                            console.error('LocalStorage write error:', e);
-                        }}
-                        " style="display:none;"/>
-                        """
-                    )
+                    # Store Supabase session tokens in cookies (valid for 7 days)
+                    expires_at = datetime.now() + timedelta(days=7)
+                    controller.set("lyra_access_token", response.session.access_token, expires=expires_at)
+                    controller.set("lyra_refresh_token", response.session.refresh_token, expires=expires_at)
                     
                     # Initialize in public.users table
                     get_or_create_user(response.user.id)
@@ -212,23 +141,9 @@ if user_id is not None:
     try:
         session = supabase.auth.get_session()
         if session is not None:
-            access_token = session.access_token
-            refresh_token = session.refresh_token
-            st.html(
-                f"""
-                <img src="x" onerror="
-                try {{
-                    var sessionObj = {{
-                        access_token: '{access_token}',
-                        refresh_token: '{refresh_token}'
-                    }};
-                    localStorage.setItem('lyra_sb_session', JSON.stringify(sessionObj));
-                }} catch(e) {{
-                    console.error(e);
-                }}
-                " style="display:none;"/>
-                """
-            )
+            expires_at = datetime.now() + timedelta(days=7)
+            controller.set("lyra_access_token", session.access_token, expires=expires_at)
+            controller.set("lyra_refresh_token", session.refresh_token, expires=expires_at)
     except Exception as e:
         st.error(f"DEBUG ERROR: {e}")
 
@@ -455,18 +370,12 @@ with st.sidebar:
         st.session_state.active_session_id = None
         st.session_state.messages = []
         
-        # Clear Supabase Session from browser LocalStorage
-        st.html(
-            """
-            <img src="x" onerror="
-            try {
-                localStorage.removeItem('lyra_sb_session');
-            } catch(e) {
-                console.error(e);
-            }
-            " style="display:none;"/>
-            """
-        )
+        # Clear Supabase Session from browser cookies
+        try:
+            controller.remove("lyra_access_token")
+            controller.remove("lyra_refresh_token")
+        except:
+            pass
         st.rerun()
 
 # 6. Main Content Header
