@@ -2,7 +2,6 @@
 import streamlit as st
 import os
 import uuid
-import extra_streamlit_components as exc
 import time
 
 from chatbot.config import APP_NAME, AVAILABLE_MODES
@@ -32,8 +31,6 @@ st.set_page_config(
 )
 
 # 2. Authentication UI & Persistent Login (Bypasses session reset on tab close)
-cookie_manager = exc.CookieManager()
-
 # Initialize session state cache for user_id and email
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
@@ -93,17 +90,16 @@ if st.session_state.user_id is None:
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
                     
-                    # Save to persistent cookie (fallback for direct tabs)
-                    import datetime
-                    cookie_expiry = datetime.datetime.now() + datetime.timedelta(days=30)
+                    # Save to persistent cookie using standard JavaScript injection
                     session_val = f"{response.user.id}|{response.user.email}"
-                    cookie_manager.set(
-                        cookie="lyra_auth_session",
-                        val=session_val,
-                        expires_at=cookie_expiry,
-                        same_site="none",
-                        secure=True,
-                        key="save_user_session"
+                    st.components.v1.html(
+                        f"""
+                        <script>
+                        document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=None; Secure";
+                        </script>
+                        """,
+                        height=0,
+                        width=0
                     )
                     
                     st.success("Welcome back!")
@@ -137,17 +133,16 @@ if st.session_state.user_id is None:
                     st.query_params["uid"] = response.user.id
                     st.query_params["email"] = response.user.email
                     
-                    # Save to persistent cookie (fallback for direct tabs)
-                    import datetime
-                    cookie_expiry = datetime.datetime.now() + datetime.timedelta(days=30)
+                    # Save to persistent cookie using standard JavaScript injection
                     session_val = f"{response.user.id}|{response.user.email}"
-                    cookie_manager.set(
-                        cookie="lyra_auth_session",
-                        val=session_val,
-                        expires_at=cookie_expiry,
-                        same_site="none",
-                        secure=True,
-                        key="save_user_session_signup"
+                    st.components.v1.html(
+                        f"""
+                        <script>
+                        document.cookie = "lyra_auth_session={session_val}; path=/; max-age=2592000; SameSite=None; Secure";
+                        </script>
+                        """,
+                        height=0,
+                        width=0
                     )
                     
                     # Initialize in public.users table
@@ -378,8 +373,16 @@ with st.sidebar:
             supabase.auth.sign_out()
         except:
             pass
-        # Clear cookies & query parameters
-        cookie_manager.delete("lyra_auth_session", key="del_cookie_session")
+        # Clear cookies using standard JavaScript injection & clear query parameters
+        st.components.v1.html(
+            """
+            <script>
+            document.cookie = "lyra_auth_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure";
+            </script>
+            """,
+            height=0,
+            width=0
+        )
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.active_session_id = None
