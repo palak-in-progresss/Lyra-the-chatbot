@@ -114,3 +114,6 @@ venv.bak/
 
 # Streamlit config (if you have custom theme settings locally)
 .streamlit/
+
+# Project Reports
+LYRA_REPORT.md
