@@ -109,7 +109,7 @@ def load_messages(session_uuid: str, limit: int = 20):
             supabase.table("conversations")
             .select("role, message, mode")
             .eq("session_id", session_uuid)
-            .order("created_at", desc=True)
+            .order("id", desc=True)
             .limit(limit)
             .execute()
         )
