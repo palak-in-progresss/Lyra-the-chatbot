@@ -8,7 +8,7 @@ from chatbot.database import (
     get_user_sessions,
     update_session_title,
     delete_session,
-    supabase,
+    get_supabase_client,
     get_or_create_user
 )
 from chatbot.memory import (
@@ -49,7 +49,7 @@ if st.session_state.user_id is None:
     
     if access_token and refresh_token:
         try:
-            response = supabase.auth.set_session(access_token, refresh_token)
+            response = get_supabase_client().auth.set_session(access_token, refresh_token)
             st.session_state.user_id = response.user.id
             st.session_state.user_email = response.user.email
             st.rerun()
@@ -80,7 +80,7 @@ if st.session_state.user_id is None:
                 st.error("Please enter both email and password.")
             else:
                 try:
-                    response = supabase.auth.sign_in_with_password({
+                    response = get_supabase_client().auth.sign_in_with_password({
                         "email": login_email,
                         "password": login_password
                     })
@@ -111,7 +111,7 @@ if st.session_state.user_id is None:
                 st.error("Password must be at least 6 characters.")
             else:
                 try:
-                    response = supabase.auth.sign_up({
+                    response = get_supabase_client().auth.sign_up({
                         "email": signup_email,
                         "password": signup_password
                     })
@@ -139,7 +139,7 @@ user_id = st.session_state.user_id
 # Declarative session sync: if logged in, ensure localStorage contains the latest tokens
 if user_id is not None:
     try:
-        session = supabase.auth.get_session()
+        session = get_supabase_client().auth.get_session()
         if session is not None:
             expires_at = datetime.now() + timedelta(days=7)
             controller.set("lyra_access_token", session.access_token, expires=expires_at)
@@ -362,7 +362,7 @@ with st.sidebar:
     st.markdown(f"<p style='color:#64748B; font-size:0.85rem; margin-bottom:5px;'>👤 Logged in as:<br><b style='color:#E2E8F0;'>{st.session_state.user_email}</b></p>", unsafe_allow_html=True)
     if st.button("🚪 Log Out", use_container_width=True):
         try:
-            supabase.auth.sign_out()
+            get_supabase_client().auth.sign_out()
         except Exception as e:
             st.error(f"DEBUG ERROR: {e}")
         st.session_state.user_id = None
