@@ -11,6 +11,10 @@
 ### Objective
 Lyra is an AI-powered conversational assistant developed using Streamlit, Supabase, and Google Gemini Large Language Models (LLMs) to provide context-aware, specialized study and career assistance. The goal of this project was to build a user-friendly assistant capable of maintaining secure, persistent conversation histories, handling document uploads (such as resumes), and offering domain-specific guidance modes in an immersive, modern user interface.
 
+### Project Resources
+* **GitHub Repository:** [INSERT GITHUB LINK - e.g., https://github.com/palak-in-progresss/Lyra-the-chatbot]
+* **Live Deployment:** [INSERT STREAMLIT LINK - e.g., https://lyra-the-chatbot.streamlit.app/]
+
 ---
 
 ## 2. Problem Statement
