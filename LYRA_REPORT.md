@@ -87,7 +87,7 @@ graph TB
   > [NOTE]
   > **[INSERT SCREENSHOT: Registration and Login tab container UI on startup]**
   
-* **Multi-session Conversation History:** Users can create multiple separate chat threads ("New Chat"), name them, select past conversations from the sidebar, or delete old sessions.
+* **Multi-session Conversation History:** Users can create multiple separate chat threads ("New Chat"), automatically titles them based on the first query, select past conversations from the sidebar, or delete old sessions.
 * **Domain-Specific Assistant Modes:** Provides specialized modes: General Assistant, Study Buddy, DSA Helper, Career Mentor, Space Mentor, and Resume Reviewer.
 * **Resume Parsing & Evaluation:** Extracted text from uploaded PDF resumes is scanned by PyPDF and critiqued by the LLM, giving users actionable improvements.
   
