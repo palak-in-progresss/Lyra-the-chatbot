@@ -339,7 +339,7 @@ with st.sidebar:
                 st.rerun()
     
     # Resume upload for Resume Reviewer mode
-    if selected_mode == "📄 Resume Reviewer":
+    if selected_mode == "Resume Reviewer":
         st.divider()
         st.markdown("<p style='color:#94A3B8; font-size:0.85rem;'>📎 Upload Resume</p>", unsafe_allow_html=True)
         uploaded_file = st.file_uploader("Upload PDF", type=["pdf"], label_visibility="collapsed")
