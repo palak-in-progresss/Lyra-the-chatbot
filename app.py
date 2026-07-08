@@ -314,7 +314,7 @@ with st.sidebar:
     if st.button("➕ New Chat", use_container_width=True):
         new_session_id = create_session(user_id, "New Chat")
         st.session_state.active_session_id = new_session_id
-        clear_history(new_session_id)
+        clear_history()
         st.rerun()
     
     st.markdown("")
