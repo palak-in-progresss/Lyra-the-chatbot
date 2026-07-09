@@ -283,10 +283,10 @@ st.markdown("""
         border-color: rgba(99, 102, 241, 0.2) !important;
     }
 
-    /* Hide Streamlit branding */
+    /* Hide Streamlit branding actions but keep sidebar expand arrow */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
+    [data-testid="stHeaderAction"] {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
